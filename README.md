@@ -1,1 +1,0 @@
-# winpay-bot-repo
