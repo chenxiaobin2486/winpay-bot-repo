@@ -119,9 +119,13 @@ def main():
     if not external_url:
         print("错误：RENDER_EXTERNAL_URL 未设置")
         return
+    # 确保 URL 不包含协议，强制添加 https://
+    if external_url.startswith("http://") or external_url.startswith("https://"):
+        external_url = external_url.split("://")[1]  # 移除协议
     webhook_url = f"https://{external_url}/webhook"
     print(f"设置 Webhook URL: {webhook_url}")
     try:
+        print("尝试启动 Webhook...")
         application.run_webhook(
             listen="0.0.0.0",
             port=port,
