@@ -110,8 +110,8 @@ def main():
     # 設置 schedule 任務
     setup_schedule()
 
-    # 啟動 Bot
-    application.run_polling(allowed_updates=telegram.ext.filters.ALL)
+    # 啟動 Bot（移除 allowed_updates 參數）
+    application.run_polling()
 
 if __name__ == '__main__':
     main()
