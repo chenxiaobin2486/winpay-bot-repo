@@ -28,17 +28,18 @@ async def handle_message(update, context):
     if message_text == "开始":
         print("匹配到 '开始' 指令")
         user = update.message.from_user.username
-        await update.message.reply_text(f"欢迎使用winpay小秘书")
+        await update.message.reply_text(f"欢迎使用winpay小秘书 @{user}")
     elif message_text == "说明":
         print("匹配到 '说明' 指令")
-        help_text = "可用指令：\n开始 - 开始使用\n入款 或 + 记录入款\n下发 \n设置操作员 <用户名> \n设置入款汇率 \n设置入款费率 \n设置下发汇率 \n设置下发费率 \n账单 或 +0 - 查看交易记录\n删除入款 - 删除最新入款\n日切 - 清空记录（仅限操作员）\nTRX地址验证 - 验证TRX地址"
+        help_text = "可用指令：\n开始 - 开始使用\n入款 <金额> 或 +<金额> - 记录入款\n下发 <金额> - 申请下发\n设置操作员 <用户名> - 设置操作员\n设置入款汇率 <数值> - 设置入款汇率\n设置入款费率 <数值> - 设置入款费率\n设置下发汇率 <数值> - 设置下发汇率\n设置下发费率 <数值> - 设置下发费率\n账单 或 +0 - 查看交易记录\n删除入款 - 删除指定入款记录\n删除出款 - 删除指定出款记录\n日切 - 清空记录（仅限操作员）\nTRX地址验证 - 验证TRX地址"
         await update.message.reply_text(help_text)
     elif (message_text.startswith("入款") or message_text.startswith("+")) and message_text != "+0":
         print(f"匹配到 '入款' 或 '+' 指令，金额: {message_text.replace('入款', '').replace('+', '').strip()}")
         try:
             amount = float(message_text.replace("入款", "").replace("+", "").strip())
             adjusted_amount = amount * exchange_rate_deposit * (1 - deposit_fee_rate)
-            transactions.append(f"入款 {amount} -> {adjusted_amount} (由 {user_id})")
+            transaction = f"入款 {amount} -> {adjusted_amount} (由 {user_id})"
+            transactions.append(transaction)
             await update.message.reply_text(f"入款 {amount} 记录成功，调整后金额：{adjusted_amount}")
         except ValueError:
             await update.message.reply_text("请输入正确金额，例如：入款1000 或 +1000")
@@ -48,7 +49,8 @@ async def handle_message(update, context):
             amount = float(message_text.replace("下发", "").strip())
             if user_id in operators:
                 adjusted_amount = amount * exchange_rate_withdraw * (1 - withdraw_fee_rate)
-                transactions.append(f"下发 {amount} -> {adjusted_amount} (由 {user_id})")
+                transaction = f"下发 {amount} -> {adjusted_amount} (由 {user_id})"
+                transactions.append(transaction)
                 await update.message.reply_text(f"下发 {amount} 申请成功，调整后金额：{adjusted_amount}")
             else:
                 await update.message.reply_text("仅限操作员执行下发")
@@ -96,14 +98,80 @@ async def handle_message(update, context):
             await update.message.reply_text("请输入正确费率，例如：设置下发费率0.05")
     elif message_text == "账单" or message_text == "+0":
         print("匹配到 '账单' 或 '+0' 指令")
-        await update.message.reply_text("\n".join(transactions) if transactions else "无交易记录")
+        # 获取最近 6 笔交易
+        recent_transactions = transactions[-6:] if len(transactions) >= 6 else transactions
+        bill = "账单\n"
+        deposit_count = sum(1 for t in recent_transactions if t.startswith("入款"))
+        withdraw_count = sum(1 for t in recent_transactions if t.startswith("下发"))
+
+        # 入款部分
+        if deposit_count > 0:
+            bill += f"入款（{deposit_count}笔）\n"
+            for t in reversed([t for t in recent_transactions if t.startswith("入款")]):
+                amount = float(t.split(" -> ")[0].split()[1])
+                adjusted = float(t.split(" -> ")[1].split()[0])
+                bill += f"{time.strftime('%H:%M')}  {amount}*(0.91)/{exchange_rate_deposit}={adjusted:.2f}u\n"
+
+        # 出款部分（若有出款）
+        if withdraw_count > 0:
+            bill += f"出款（{withdraw_count}笔）\n"
+            for t in reversed([t for t in recent_transactions if t.startswith("下发")]):
+                amount = float(t.split(" -> ")[0].split()[1])
+                adjusted = float(t.split(" -> ")[1].split()[0])
+                bill += f"{time.strftime('%H:%M')}  {amount}*(1.04)/{exchange_rate_withdraw}={adjusted:.2f}u\n"
+
+        # 统计信息
+        total_deposit = sum(float(t.split(" -> ")[0].split()[1]) for t in transactions if t.startswith("入款"))
+        total_deposit_adjusted = sum(float(t.split(" -> ")[1].split()[0]) for t in transactions if t.startswith("入款"))
+        total_withdraw = sum(float(t.split(" -> ")[0].split()[1]) for t in transactions if t.startswith("下发"))
+        total_withdraw_adjusted = sum(float(t.split(" -> ")[1].split()[0]) for t in transactions if t.startswith("下发"))
+        balance = total_deposit_adjusted - total_withdraw_adjusted
+
+        bill += f"入款汇率：{exchange_rate_deposit}  |  费率：{deposit_fee_rate*100}%\n"
+        if withdraw_count > 0:
+            bill += f"出款汇率：{exchange_rate_withdraw}  |  费率：{withdraw_fee_rate*100}%\n"
+        bill += f"总入款：{total_deposit:.0f}  |  {total_deposit_adjusted:.2f}u\n"
+        if withdraw_count > 0:
+            bill += f"总出款：{total_withdraw:.0f}  |  {total_withdraw_adjusted:.2f}u\n"
+        bill += f"总余额：{balance:.2f}u"
+
+        await update.message.reply_text(bill if transactions else "无交易记录")
     elif message_text == "删除入款":
         print("匹配到 '删除入款' 指令")
-        if transactions and transactions[-1].startswith("入款"):
-            removed = transactions.pop()
-            await update.message.reply_text(f"已删除最新入款记录：{removed}")
+        if update.message.reply_to_message:
+            target_text = update.message.reply_to_message.text
+            if any(target_text.startswith(f"入款 {amount}") for amount in [t.split(" -> ")[0].split()[1] for t in transactions if t.startswith("入款")]):
+                for t in transactions[:]:
+                    if t.startswith("入款") and t.split(" -> ")[0].split()[1] in target_text:
+                        transactions.remove(t)
+                        amount = float(t.split(" -> ")[0].split()[1])
+                        adjusted = float(t.split(" -> ")[1].split()[0])
+                        await update.message.reply_text(f"{target_text} 这条消息删除功能为删除这笔入款记录")
+                        break
+                else:
+                    await update.message.reply_text("未找到对应的入款记录")
+            else:
+                await update.message.reply_text("请回复目标入款消息")
         else:
-            await update.message.reply_text("无入款记录可删除")
+            await update.message.reply_text("请回复目标入款消息以删除")
+    elif message_text == "删除出款":
+        print("匹配到 '删除出款' 指令")
+        if update.message.reply_to_message:
+            target_text = update.message.reply_to_message.text
+            if any(target_text.startswith(f"下发 {amount}") for amount in [t.split(" -> ")[0].split()[1] for t in transactions if t.startswith("下发")]):
+                for t in transactions[:]:
+                    if t.startswith("下发") and t.split(" -> ")[0].split()[1] in target_text:
+                        transactions.remove(t)
+                        amount = float(t.split(" -> ")[0].split()[1])
+                        adjusted = float(t.split(" -> ")[1].split()[0])
+                        await update.message.reply_text(f"{target_text} 这条消息删除功能为删除这笔出款记录")
+                        break
+                else:
+                    await update.message.reply_text("未找到对应的出款记录")
+            else:
+                await update.message.reply_text("请回复目标出款消息")
+        else:
+            await update.message.reply_text("请回复目标出款消息以删除")
     elif message_text == "日切" and user_id == "8041296886":
         print("匹配到 '日切' 指令")
         transactions.clear()
