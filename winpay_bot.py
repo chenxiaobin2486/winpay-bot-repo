@@ -110,7 +110,8 @@ def main():
     # 設置 schedule 任務
     setup_schedule()
 
-    # 啟動 Bot（移除 allowed_updates 參數）
+    # 啟動 Bot，綁定到 Render 預設端口
+    port = int(os.getenv("PORT", "10000"))
     application.run_polling()
 
 if __name__ == '__main__':
