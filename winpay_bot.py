@@ -229,18 +229,20 @@ async def handle_message(update, context):
                 original_message = update.message.reply_to_message.text.strip()
                 print(f"尝试删除，原始消息: '{original_message}'")
                 if original_message.startswith("+") and not original_message == "+0":
+                    amount_str = original_message.replace("+", "").strip()
+                    amount = float(amount_str.rstrip('uU'))
                     for t in transactions[:]:
-                        if t == original_message:
+                        if t.startswith("入款") and float(t.split(" -> ")[0].split()[1].rstrip('u')) == amount:
                             transactions.remove(t)
-                            amount = float(t.split(" -> ")[0].split()[1].rstrip('u'))
-                            await update.message.reply_text(f"入款 {int(amount)}{'u' if t.split()[1].endswith('u') else ''} 已被撤销")
+                            await update.message.reply_text(f"入款 {int(amount)}{'u' if amount_str.endswith('u') else ''} 已被撤销")
                             return
                 elif original_message.startswith("下发"):
+                    amount_str = original_message.replace("下发", "").strip()
+                    amount = float(amount_str.rstrip('uU'))
                     for t in transactions[:]:
-                        if t == original_message:
+                        if t.startswith("下发") and float(t.split(" -> ")[0].split()[1].rstrip('u')) == amount:
                             transactions.remove(t)
-                            amount = float(t.split(" -> ")[0].split()[1].rstrip('u'))
-                            await update.message.reply_text(f"下发 {int(amount)}{'u' if t.split()[1].endswith('u') else ''} 已被撤销")
+                            await update.message.reply_text(f"下发 {int(amount)}{'u' if amount_str.endswith('u') else ''} 已被撤销")
                             return
                 await update.message.reply_text("无法撤销此消息，请确保回复正确的入款或下发记录")
             else:
