@@ -56,6 +56,8 @@ async def handle_bill(update, context):
 
     # 出款部分
     if withdraw_count > 0:
+        if deposit_count > 0:  # 若有入款，添加空行分隔
+            bill += "\n"
         bill += f"出款（{withdraw_count}笔）\n"
         for t in reversed([t for t in recent_transactions if t.startswith("下发")]):
             parts = t.split(" -> ")
@@ -69,22 +71,29 @@ async def handle_bill(update, context):
             bill += f"{timestamp}  {amount_str}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_withdraw)}={adjusted_str}u  ({operator})\n"
 
     # 统计信息
-    total_deposit = sum(float(t.split(" -> ")[0].split()[1].rstrip('u')) for t in transactions[chat_id] if t.startswith("入款"))
-    total_deposit_adjusted = sum(float(t.split(" -> ")[1].split()[0].rstrip('u')) for t in transactions[chat_id] if t.startswith("入款"))
-    total_withdraw = sum(float(t.split(" -> ")[0].split()[1].rstrip('u')) for t in transactions[chat_id] if t.startswith("下发"))
-    total_withdraw_adjusted = sum(float(t.split(" -> ")[1].split()[0].rstrip('u')) for t in transactions[chat_id] if t.startswith("下发"))
-    balance = total_deposit_adjusted - total_withdraw_adjusted
-    balance_str = f"{int(balance)}" if balance.is_integer() else f"{balance:.2f}"
-
-    # 仅在有入款时显示入款相关统计
-    if deposit_count > 0:
-        bill += f"\n入款汇率：{format_exchange_rate(exchange_rate_deposit)}  |  费率：{int(deposit_fee_rate*100)}%\n"
-        bill += f"总入款：{int(total_deposit)}  |  {int(total_deposit_adjusted)}u\n"
-    # 仅在有出款时显示出款相关统计
-    if withdraw_count > 0:
-        bill += f"出款汇率：{format_exchange_rate(exchange_rate_withdraw)}  |  费率：{int(withdraw_fee_rate*100)}%\n"
-        bill += f"总出款：{int(total_withdraw)}  |  {int(total_withdraw_adjusted)}u\n"
-    bill += f"总余额：{balance_str}u"
+    if deposit_count > 0 or withdraw_count > 0:  # 只有有交易时才显示统计
+        if deposit_count > 0 or withdraw_count > 0:  # 确保有统计内容前加空行
+            bill += "\n"
+        # 仅在有入款时显示入款相关统计
+        if deposit_count > 0:
+            bill += f"入款汇率：{format_exchange_rate(exchange_rate_deposit)}  |  费率：{int(deposit_fee_rate*100)}%\n"
+        # 仅在有出款时显示出款相关统计
+        if withdraw_count > 0:
+            bill += f"出款汇率：{format_exchange_rate(exchange_rate_withdraw)}  |  费率：{int(withdraw_fee_rate*100)}%\n"
+        if deposit_count > 0 or withdraw_count > 0:  # 确保统计分段
+            bill += "\n"
+        # 总金额统计
+        total_deposit = sum(float(t.split(" -> ")[0].split()[1].rstrip('u')) for t in transactions[chat_id] if t.startswith("入款"))
+        total_deposit_adjusted = sum(float(t.split(" -> ")[1].split()[0].rstrip('u')) for t in transactions[chat_id] if t.startswith("入款"))
+        total_withdraw = sum(float(t.split(" -> ")[0].split()[1].rstrip('u')) for t in transactions[chat_id] if t.startswith("下发"))
+        total_withdraw_adjusted = sum(float(t.split(" -> ")[1].split()[0].rstrip('u')) for t in transactions[chat_id] if t.startswith("下发"))
+        balance = total_deposit_adjusted - total_withdraw_adjusted
+        balance_str = f"{int(balance)}" if balance.is_integer() else f"{balance:.2f}"
+        if deposit_count > 0:
+            bill += f"总入款：{int(total_deposit)}  |  {int(total_deposit_adjusted)}u\n"
+        if withdraw_count > 0:
+            bill += f"总出款：{int(total_withdraw)}  |  {int(total_withdraw_adjusted)}u\n"
+        bill += f"总余额：{balance_str}u"
 
     await update.message.reply_text(bill if transactions[chat_id] else "无交易记录")
 
