@@ -16,6 +16,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "7908773608:AAFFqLmGkJ9zbsuymQTFzJxy5IyeN1E9M
 initial_admin_username = "WinPay06_Thomason"  # 初始最高权限管理员用户名
 operators = {}  # {chat_id: {username: True}}，每个群组独立操作员列表
 transactions = {}  # {chat_id: [transaction_list]}，每个群组独立记账
+user_history = {}  # {chat_id: {user_id: {"username": str, "first_name": str}}}，记录成员历史
 exchange_rate_deposit = 1.0
 deposit_fee_rate = 0.0
 exchange_rate_withdraw = 1.0
@@ -39,7 +40,6 @@ async def handle_bill(update, context):
     deposit_count = sum(1 for t in recent_transactions if t.startswith("入款"))
     withdraw_count = sum(1 for t in recent_transactions if t.startswith("下发"))
 
-    # 入款部分
     if deposit_count > 0:
         bill += f"入款（{deposit_count}笔）\n"
         for t in reversed([t for t in recent_transactions if t.startswith("入款")]):
@@ -53,7 +53,6 @@ async def handle_bill(update, context):
             adjusted_str = f"{int(adjusted)}" if adjusted.is_integer() else f"{adjusted:.2f}"
             bill += f"{timestamp}  {amount_str}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_deposit)}={adjusted_str}u  ({operator})\n"
 
-    # 出款部分
     if withdraw_count > 0:
         bill += f"出款（{withdraw_count}笔）\n"
         for t in reversed([t for t in recent_transactions if t.startswith("下发")]):
@@ -67,7 +66,6 @@ async def handle_bill(update, context):
             adjusted_str = f"{int(adjusted)}" if adjusted.is_integer() else f"{adjusted:.2f}"
             bill += f"{timestamp}  {amount_str}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_withdraw)}={adjusted_str}u  ({operator})\n"
 
-    # 统计信息
     total_deposit = sum(float(t.split(" -> ")[0].split()[1].rstrip('u')) for t in transactions[chat_id] if t.startswith("入款"))
     total_deposit_adjusted = sum(float(t.split(" -> ")[1].split()[0].rstrip('u')) for t in transactions[chat_id] if t.startswith("入款"))
     total_withdraw = sum(float(t.split(" -> ")[0].split()[1].rstrip('u')) for t in transactions[chat_id] if t.startswith("下发"))
@@ -92,26 +90,55 @@ def format_exchange_rate(rate):
 
 # 欢迎新成员
 async def welcome_new_member(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.message.chat_id)
+    if chat_id not in user_history:
+        user_history[chat_id] = {}
     if update.message and update.message.new_chat_members:
         for member in update.message.new_chat_members:
-            nickname = member.first_name.strip() if member.first_name else member.username or "新朋友"
+            user_id = str(member.id)
+            username = member.username
+            first_name = member.first_name.strip() if member.first_name else None
+            user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
+            nickname = first_name or username or "新朋友"
             await update.message.reply_text(f"欢迎 {nickname} 来到本群")
 
 # 处理所有消息
 async def handle_message(update, context):
-    global exchange_rate_deposit, deposit_fee_rate, exchange_rate_withdraw, withdraw_fee_rate, operators, transactions
+    global exchange_rate_deposit, deposit_fee_rate, exchange_rate_withdraw, withdraw_fee_rate, operators, transactions, user_history
     message_text = update.message.text.strip()
     chat_id = str(update.message.chat_id)
     user_id = str(update.message.from_user.id)
     username = update.message.from_user.username
-    operator_name = update.message.from_user.first_name.strip() if update.message.from_user.first_name else "未知用户"
+    first_name = update.message.from_user.first_name.strip() if update.message.from_user.first_name else None
+    operator_name = first_name or "未知用户"
     print(f"收到消息: '{message_text}' 从用户 {user_id}, username: {username}, chat_id: {chat_id}")
     print(f"当前操作员列表: {operators.get(chat_id, {})}")
 
     if chat_id not in operators:
-        operators[chat_id] = {initial_admin_username: True}  # 初始管理员默认加入
+        operators[chat_id] = {initial_admin_username: True}
     if chat_id not in transactions:
         transactions[chat_id] = []
+    if chat_id not in user_history:
+        user_history[chat_id] = {}
+
+    # 更新或记录用户历史
+    if user_id not in user_history[chat_id]:
+        user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
+    else:
+        old_data = user_history[chat_id][user_id]
+        old_username = old_data["username"]
+        old_first_name = old_data["first_name"]
+        if username and username != old_username and first_name == old_first_name:
+            await update.message.reply_text(
+                f"⚠️警告⚠️{first_name} 用户名不一致\n之前用户名@{old_username}\n现在用户名@{username}\n请注意查证‼️"
+            )
+            print(f"用户名变更警告: {first_name}, 之前 @{old_username}, 现在 @{username}")
+        elif first_name and first_name != old_first_name and username == old_username:
+            await update.message.reply_text(
+                f"⚠️警告⚠️@{username} 昵称不一致\n之前昵称{old_first_name}\n现在昵称{first_name}\n请注意查证‼️"
+            )
+            print(f"昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
+        user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
 
     if message_text == "开始":
         if username and username in operators.get(chat_id, {}):
@@ -126,6 +153,7 @@ async def handle_message(update, context):
 记入入款：入款 或 +100 或 +100u/U
 记入下发：下发 100 或 下发 50u/U
 设置操作员：设置操作员 @用户名
+删除操作员：删除操作员 @用户名
 设置入款汇率
 设置入款费率
 设置下发汇率
@@ -181,7 +209,7 @@ async def handle_message(update, context):
             except ValueError:
                 await update.message.reply_text("请输入正确金额，例如：下发500 或 下发50u")
     elif message_text.startswith("设置操作员"):
-        if username == initial_admin_username:  # 仅限最高权限管理员
+        if username and username in operators.get(chat_id, {}):
             print(f"匹配到 '设置操作员' 指令，参数: {message_text.replace('设置操作员', '').strip()}")
             operator = message_text.replace("设置操作员", "").strip()
             if operator.startswith("@"):
@@ -192,6 +220,19 @@ async def handle_message(update, context):
                 await update.message.reply_text(f"已将 @{operator} 设置为操作员")
             else:
                 await update.message.reply_text("请使用格式：设置操作员 @用户名")
+    elif message_text.startswith("删除操作员"):
+        if username and username in operators.get(chat_id, {}):
+            print(f"匹配到 '删除操作员' 指令，参数: {message_text.replace('删除操作员', '').strip()}")
+            operator = message_text.replace("删除操作员", "").strip()
+            if operator.startswith("@"):
+                operator = operator[1:]  # 移除 @ 符号
+                if chat_id in operators and operator in operators[chat_id]:
+                    del operators[chat_id][operator]
+                    await update.message.reply_text(f"已删除 @{operator} 的操作员权限")
+                else:
+                    await update.message.reply_text(f"@{operator} 不是操作员")
+            else:
+                await update.message.reply_text("请使用格式：删除操作员 @用户名")
     elif message_text.startswith("设置入款汇率"):
         if username and username in operators.get(chat_id, {}):
             print(f"匹配到 '设置入款汇率' 指令，汇率: {message_text.replace('设置入款汇率', '').strip()}")
