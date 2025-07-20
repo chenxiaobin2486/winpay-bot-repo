@@ -68,9 +68,9 @@ async def handle_bill(update, context):
     if withdraw_count > 0:
         bill += f"出款汇率：{format_exchange_rate(exchange_rate_withdraw)}  |  费率：{int(withdraw_fee_rate*100)}%\n"
     if deposit_count > 0:
-        bill += f"总入款：{int(total_deposit)}  |  {balance_str}u (调整后)\n"
+        bill += f"总入款：{int(total_deposit)}  |  {balance_str}u \n"
     if withdraw_count > 0:
-        bill += f"总出款：{int(total_withdraw)}  |  {int(total_withdraw_adjusted)}u (调整后)\n"
+        bill += f"总出款：{int(total_withdraw)}  |  {int(total_withdraw_adjusted)}u \n"
     bill += f"总余额：{balance_str}u"
 
     await update.message.reply_text(bill if transactions else "无交易记录")
