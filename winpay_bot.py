@@ -99,12 +99,8 @@ async def handle_message(update, context):
     global exchange_rate_deposit, deposit_fee_rate, exchange_rate_withdraw, withdraw_fee_rate, operators
     message_text = update.message.text.strip()
     user_id = str(update.message.from_user.id)
-    # 获取昵称，优先 first_name，若为空则用 username，再用 user_id
-    operator_name = update.message.from_user.first_name
-    if not operator_name:
-        operator_name = update.message.from_user.username
-    if not operator_name:
-        operator_name = user_id
+    # 获取昵称，仅使用 first_name
+    operator_name = update.message.from_user.first_name or "未知用户"
     print(f"收到消息: '{message_text}' 从用户 {user_id}")
 
     if message_text == "开始":
