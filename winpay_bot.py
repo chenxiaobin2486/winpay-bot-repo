@@ -227,6 +227,7 @@ async def handle_message(update, context):
             print("匹配到 '删除' 指令")
             if update.message.reply_to_message:
                 original_message = update.message.reply_to_message.text.strip()
+                print(f"尝试删除，原始消息: '{original_message}'")
                 if original_message.startswith("+") and not original_message == "+0":
                     for t in transactions[:]:
                         if t == original_message:
