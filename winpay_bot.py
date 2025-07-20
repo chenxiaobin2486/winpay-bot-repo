@@ -1,38 +1,33 @@
 # 導入必要的模組
-from telegram.ext import Application, CommandHandler, MessageHandler
+from telegram.ext import Application, MessageHandler
 import telegram.ext.filters
 import schedule
 import time
 import re
+import os
 import asyncio
 
-# 定義 Bot Token（建議從環境變量獲取）
-BOT_TOKEN = "7908773608:AAFFqLmGkJ9zbsuymQTFzJxy5IyeN1E9M-U"  # 確保與環境變量 BOT_TOKEN 一致
+# 定義 Bot Token（從環境變量獲取）
+BOT_TOKEN = os.getenv("BOT_TOKEN", "7908773608:AAFFqLmGkJ9zbsuymQTFzJxy5IyeN1E9M-U")
 
-# 定義全局變量（示例，根據你的需求調整）
-operators = {"8041296886": True}  # 操作員清單
-transactions = []  # 交易記錄
-exchange_rate_deposit = 1.0  # 入款匯率
-exchange_rate_withdraw = 1.0  # 下發匯率
-fee_rate = 0.0  # 費率
+# 定義全局變量
+operators = {"8041296886": True}
+transactions = []
+exchange_rate_deposit = 1.0
+exchange_rate_withdraw = 1.0
+fee_rate = 0.0
 
-# 處理 /start 指令
-async def start(update, context):
-    user = update.message.from_user.username
-    await update.message.reply_text(f"歡迎使用winpay小秘书 @{user}")
-
-# 處理說明指令
-async def help_command(update, context):
-    help_text = "可用指令：\n開始 - 開始使用\n入款 <金額> - 記錄入款\n下發 <金額> - 申請下發\n設置操作員 <用戶名> - 設置操作員\n設置入款匯率 <數值> - 設置入款匯率\n設置下發匯率 <數值> - 設置下發匯率\n設置費率 <數值> - 設置費率\n帳單 - 查看交易記錄\n刪除入款 - 刪除最新入款\n日切 - 清空記錄（僅限操作員）\nTRX地址驗證 - 驗證TRX地址"
-    await update.message.reply_text(help_text)
-
-# 處理無斜杠指令（如開始、入款）
+# 處理所有訊息
 async def handle_message(update, context):
     message_text = update.message.text.strip()
     user_id = str(update.message.from_user.id)
 
     if message_text == "開始":
-        await start(update, context)
+        user = update.message.from_user.username
+        await update.message.reply_text(f"歡迎使用winpay小秘书 @{user}")
+    elif message_text == "說明":
+        help_text = "可用指令：\n開始 - 開始使用\n入款 <金額> - 記錄入款\n下發 <金額> - 申請下發\n設置操作員 <用戶名> - 設置操作員\n設置入款匯率 <數值> - 設置入款匯率\n設置下發匯率 <數值> - 設置下發匯率\n設置費率 <數值> - 設置費率\n帳單 - 查看交易記錄\n刪除入款 - 刪除最新入款\n日切 - 清空記錄（僅限操作員）\nTRX地址驗證 - 驗證TRX地址"
+        await update.message.reply_text(help_text)
     elif message_text.startswith("入款"):
         try:
             amount = float(message_text.replace("入款", "").strip())
@@ -96,36 +91,27 @@ async def handle_message(update, context):
     else:
         await update.message.reply_text("未知指令，請輸入說明查看幫助")
 
-# 定義日誌功能（示例）
-def job():
+# 定義日誌功能
+async def job():
     print("執行日誌任務", time.ctime())
 
 # 設置日誌任務
-schedule.every().day.at("00:00").do(job)
+def setup_schedule():
+    schedule.every().day.at("00:00").do(lambda: asyncio.run(job()))
 
 # 主函數
 def main():
     # 使用 ApplicationBuilder 初始化
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # 註冊指令處理器
-    application.add_handler(CommandHandler("開始", start))
-    application.add_handler(CommandHandler("說明", help_command))
+    # 註冊訊息處理器（處理所有文本訊息）
+    application.add_handler(MessageHandler(telegram.ext.filters.TEXT, handle_message))
 
-    # 註冊無斜杠指令處理器
-    application.add_handler(MessageHandler(telegram.ext.filters.COMMAND, handle_message))  # 處理命令
-    application.add_handler(MessageHandler(telegram.ext.filters.TEXT & ~telegram.ext.filters.COMMAND, handle_message))  # 處理文本
+    # 設置 schedule 任務
+    setup_schedule()
 
-    # 啟動 Bot 並運行異步
+    # 啟動 Bot
     application.run_polling(allowed_updates=telegram.ext.filters.ALL)
-
-    # 運行 schedule 任務（需在異步環境中運行）
-    loop = asyncio.get_event_loop()
-    try:
-        loop.run_until_complete(schedule.run_all())
-        loop.run_forever()
-    except KeyboardInterrupt:
-        loop.close()
 
 if __name__ == '__main__':
     main()
