@@ -4,6 +4,7 @@ import telegram.ext.filters
 import schedule
 import time
 import re
+import asyncio
 
 # 定義 Bot Token（建議從環境變量獲取）
 BOT_TOKEN = "7908773608:AAFFqLmGkJ9zbsuymQTFzJxy5IyeN1E9M-U"  # 確保與環境變量 BOT_TOKEN 一致
@@ -115,12 +116,16 @@ def main():
     application.add_handler(MessageHandler(telegram.ext.filters.COMMAND, handle_message))  # 處理命令
     application.add_handler(MessageHandler(telegram.ext.filters.TEXT & ~telegram.ext.filters.COMMAND, handle_message))  # 處理文本
 
-    # 啟動 Bot
-    application.run_polling()
-    schedule.run_all()  # 立即執行所有任務
+    # 啟動 Bot 並運行異步
+    application.run_polling(allowed_updates=telegram.ext.filters.ALL)
 
-    # 保持運行（無需 idle，因 run_polling 已處理）
-    # application.idle()  # 註解掉，21.2 版本不建議直接使用
+    # 運行 schedule 任務（需在異步環境中運行）
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(schedule.run_all())
+        loop.run_forever()
+    except KeyboardInterrupt:
+        loop.close()
 
 if __name__ == '__main__':
     main()
