@@ -310,7 +310,7 @@ async def handle_message(update, context):
         if username and username in operators.get(chat_id, {}):
             print("匹配到 '删除账单' 指令")
             transactions[chat_id].clear()
-            await update.message.reply_text("账单已清空，重新记账开始")
+            await update.message.reply_text("本日账单已结算，重新开始记账")
     elif message_text == "日切" and username == initial_admin_username:
         if username in operators.get(chat_id, {}):
             print("匹配到 '日切' 指令")
