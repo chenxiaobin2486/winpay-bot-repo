@@ -32,7 +32,7 @@ async def handle_message(update, context):
         print("匹配到 '说明' 指令")
         help_text = "可用指令：\n开始 - 开始使用\n入款 <金额> 或 +<金额> - 记录入款\n下发 <金额> - 申请下发\n设置操作员 <用户名> - 设置操作员\n设置入款汇率 <数值> - 设置入款汇率\n设置入款费率 <数值> - 设置入款费率\n设置下发汇率 <数值> - 设置下发汇率\n设置下发费率 <数值> - 设置下发费率\n账单 或 +0 - 查看交易记录\n删除入款 - 删除最新入款\n日切 - 清空记录（仅限操作员）\nTRX地址验证 - 验证TRX地址"
         await update.message.reply_text(help_text)
-    elif message_text.startswith("入款") or message_text.startswith("+") and not message_text == "+0":
+    elif (message_text.startswith("入款") or message_text.startswith("+")) and message_text != "+0":
         print(f"匹配到 '入款' 或 '+' 指令，金额: {message_text.replace('入款', '').replace('+', '').strip()}")
         try:
             amount = float(message_text.replace("入款", "").replace("+", "").strip())
@@ -74,7 +74,7 @@ async def handle_message(update, context):
         try:
             rate = float(message_text.replace("设置入款费率", "").strip())
             deposit_fee_rate = rate
-            await update.message.reply_text(f"入款费率设置为 {rate}")
+            await update.message.reply_text(f"设置成功入款费率 {rate}%")
         except ValueError:
             await update.message.reply_text("请输入正确费率，例如：设置入款费率0.05")
     elif message_text.startswith("设置下发汇率"):
@@ -90,7 +90,7 @@ async def handle_message(update, context):
         try:
             rate = float(message_text.replace("设置下发费率", "").strip())
             withdraw_fee_rate = rate
-            await update.message.reply_text(f"下发费率设置为 {rate}")
+            await update.message.reply_text(f"设置成功下发费率 {rate}%")
         except ValueError:
             await update.message.reply_text("请输入正确费率，例如：设置下发费率0.05")
     elif message_text == "账单" or message_text == "+0":
