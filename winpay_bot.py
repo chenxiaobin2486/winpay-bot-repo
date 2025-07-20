@@ -62,16 +62,16 @@ async def handle_bill(update, context):
     total_withdraw = sum(float(t.split(" -> ")[0].split()[1].rstrip('u')) for t in transactions if t.startswith("下发"))
     total_withdraw_adjusted = sum(float(t.split(" -> ")[1].split()[0].rstrip('u')) for t in transactions if t.startswith("下发"))
     balance = total_deposit_adjusted - total_withdraw_adjusted
-    balance_str = f"{int(balance)}u" if balance.is_integer() else f"{balance:.2f}u"
+    balance_str = f"{int(balance)}" if balance.is_integer() else f"{balance:.2f}"
 
-    bill += f"入款汇率：{format_exchange_rate(exchange_rate_deposit)}  |  费率：{int(deposit_fee_rate*100)}%\n"
+    bill += f"\n入款汇率：{format_exchange_rate(exchange_rate_deposit)}  |  费率：{int(deposit_fee_rate*100)}%\n"
     if withdraw_count > 0:
         bill += f"出款汇率：{format_exchange_rate(exchange_rate_withdraw)}  |  费率：{int(withdraw_fee_rate*100)}%\n"
     if deposit_count > 0:
-        bill += f"总入款：{int(total_deposit)}  |  {int(total_deposit_adjusted)}u" if total_deposit_adjusted.is_integer() else f"总入款：{int(total_deposit)}  |  {total_deposit_adjusted:.2f}u\n"
+        bill += f"总入款：{int(total_deposit)}  |  {balance_str}u (调整后)\n"
     if withdraw_count > 0:
-        bill += f"总出款：{int(total_withdraw)}  |  {int(total_withdraw_adjusted)}u" if total_withdraw_adjusted.is_integer() else f"总出款：{int(total_withdraw)}  |  {total_withdraw_adjusted:.2f}u\n"
-    bill += f"总余额：{balance_str}"
+        bill += f"总出款：{int(total_withdraw)}  |  {int(total_withdraw_adjusted)}u (调整后)\n"
+    bill += f"总余额：{balance_str}u"
 
     await update.message.reply_text(bill if transactions else "无交易记录")
 
@@ -113,6 +113,7 @@ async def handle_message(update, context):
 设置下发费率
 查看交易记录：账单 或 +0 
 撤销交易记录 - 回复入款或下发消息+删除
+清空账单：删除账单
         """
         await update.message.reply_text(help_text)
     elif (message_text.startswith("入款") or message_text.startswith("+")) and message_text != "+0":
@@ -255,6 +256,13 @@ async def handle_message(update, context):
                 await update.message.reply_text("无法撤销此消息，请确保回复正确的入款或下发记录")
             else:
                 await update.message.reply_text("请回复目标交易相关消息以删除")
+        else:
+            await update.message.reply_text("仅限操作员使用此功能")
+    elif message_text == "删除账单":
+        if user_id in operators:
+            print("匹配到 '删除账单' 指令")
+            transactions.clear()
+            await update.message.reply_text("目前账单已结算，重新开始记账")
         else:
             await update.message.reply_text("仅限操作员使用此功能")
     elif message_text == "日切" and user_id == "8041296886":
