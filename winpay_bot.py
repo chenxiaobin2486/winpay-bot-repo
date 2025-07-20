@@ -38,8 +38,8 @@ async def handle_bill(update, context):
     if deposit_count > 0:
         bill += f"入款（{deposit_count}笔）\n"
         for t in reversed([t for t in recent_transactions if t.startswith("入款")]):
-            amount = float(t.split(" -> ")[0].split()[1])
-            adjusted = float(t.split(" -> ")[1].split()[0])
+            amount = float(t.split(" -> ")[0].split()[1].rstrip('u'))
+            adjusted = float(t.split(" -> ")[1].split()[0].rstrip('u'))
             effective_rate = 1 - deposit_fee_rate
             amount_str = f"{int(amount)}" if amount.is_integer() else f"{amount:.2f}"
             adjusted_str = f"{int(adjusted)}" if adjusted.is_integer() else f"{adjusted:.2f}"
@@ -49,27 +49,28 @@ async def handle_bill(update, context):
     if withdraw_count > 0:
         bill += f"出款（{withdraw_count}笔）\n"
         for t in reversed([t for t in recent_transactions if t.startswith("下发")]):
-            amount = float(t.split(" -> ")[0].split()[1])
-            adjusted = float(t.split(" -> ")[1].split()[0])
+            amount = float(t.split(" -> ")[0].split()[1].rstrip('u'))
+            adjusted = float(t.split(" -> ")[1].split()[0].rstrip('u'))
             effective_rate = 1 + withdraw_fee_rate
             amount_str = f"{int(amount)}" if amount.is_integer() else f"{amount:.2f}"
             adjusted_str = f"{int(adjusted)}" if adjusted.is_integer() else f"{adjusted:.2f}"
             bill += f"{amount_str}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_withdraw)}={adjusted_str}u\n"
 
     # 统计信息
-    total_deposit = sum(float(t.split(" -> ")[0].split()[1]) for t in transactions if t.startswith("入款"))
-    total_deposit_adjusted = sum(float(t.split(" -> ")[1].split()[0]) for t in transactions if t.startswith("入款"))
-    total_withdraw = sum(float(t.split(" -> ")[0].split()[1]) for t in transactions if t.startswith("下发"))
-    total_withdraw_adjusted = sum(float(t.split(" -> ")[1].split()[0]) for t in transactions if t.startswith("下发"))
+    total_deposit = sum(float(t.split(" -> ")[0].split()[1].rstrip('u')) for t in transactions if t.startswith("入款"))
+    total_deposit_adjusted = sum(float(t.split(" -> ")[1].split()[0].rstrip('u')) for t in transactions if t.startswith("入款"))
+    total_withdraw = sum(float(t.split(" -> ")[0].split()[1].rstrip('u')) for t in transactions if t.startswith("下发"))
+    total_withdraw_adjusted = sum(float(t.split(" -> ")[1].split()[0].rstrip('u')) for t in transactions if t.startswith("下发"))
     balance = total_deposit_adjusted - total_withdraw_adjusted
     balance_str = f"{int(balance)}u" if balance.is_integer() else f"{balance:.2f}u"
 
     bill += f"入款汇率：{format_exchange_rate(exchange_rate_deposit)}  |  费率：{int(deposit_fee_rate*100)}%\n"
     if withdraw_count > 0:
         bill += f"出款汇率：{format_exchange_rate(exchange_rate_withdraw)}  |  费率：{int(withdraw_fee_rate*100)}%\n"
-    bill += f"总入款：{int(total_deposit)}  |  {int(total_deposit_adjusted)}u" if total_deposit_adjusted.is_integer() else f"{int(total_deposit)}  |  {total_deposit_adjusted:.2f}u\n"
+    if deposit_count > 0:
+        bill += f"总入款：{int(total_deposit)}  |  {int(total_deposit_adjusted)}u" if total_deposit_adjusted.is_integer() else f"总入款：{int(total_deposit)}  |  {total_deposit_adjusted:.2f}u\n"
     if withdraw_count > 0:
-        bill += f"总出款：{int(total_withdraw)}  |  {int(total_withdraw_adjusted)}u" if total_withdraw_adjusted.is_integer() else f"{int(total_withdraw)}  |  {total_withdraw_adjusted:.2f}u\n"
+        bill += f"总出款：{int(total_withdraw)}  |  {int(total_withdraw_adjusted)}u" if total_withdraw_adjusted.is_integer() else f"总出款：{int(total_withdraw)}  |  {total_withdraw_adjusted:.2f}u\n"
     bill += f"总余额：{balance_str}"
 
     await update.message.reply_text(bill if transactions else "无交易记录")
