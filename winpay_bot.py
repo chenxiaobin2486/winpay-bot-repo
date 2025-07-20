@@ -43,7 +43,7 @@ async def handle_bill(update, context):
             effective_rate = 1 - deposit_fee_rate
             amount_str = f"{int(amount)}" if amount.is_integer() else f"{amount:.2f}"
             adjusted_str = f"{int(adjusted)}" if adjusted.is_integer() else f"{adjusted:.2f}"
-            bill += f"{amount_str}*{effective_rate:.2f}/{exchange_rate_deposit:.3f}={adjusted_str}u\n"
+            bill += f"{amount_str}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_deposit)}={adjusted_str}u\n"
 
     # 出款部分（若有出款）
     if withdraw_count > 0:
@@ -54,7 +54,7 @@ async def handle_bill(update, context):
             effective_rate = 1 + withdraw_fee_rate
             amount_str = f"{int(amount)}" if amount.is_integer() else f"{amount:.2f}"
             adjusted_str = f"{int(adjusted)}" if adjusted.is_integer() else f"{adjusted:.2f}"
-            bill += f"{amount_str}*{effective_rate:.2f}/{exchange_rate_withdraw:.3f}={adjusted_str}u\n"
+            bill += f"{amount_str}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_withdraw)}={adjusted_str}u\n"
 
     # 统计信息
     total_deposit = sum(float(t.split(" -> ")[0].split()[1]) for t in transactions if t.startswith("入款"))
@@ -64,15 +64,19 @@ async def handle_bill(update, context):
     balance = total_deposit_adjusted - total_withdraw_adjusted
     balance_str = f"{int(balance)}" if balance.is_integer() else f"{balance:.2f}"
 
-    bill += f"入款汇率：{exchange_rate_deposit:.3f}  |  费率：{int(deposit_fee_rate*100)}%\n"
+    bill += f"入款汇率：{format_exchange_rate(exchange_rate_deposit)}  |  费率：{int(deposit_fee_rate*100)}%\n"
     if withdraw_count > 0:
-        bill += f"出款汇率：{exchange_rate_withdraw:.3f}  |  费率：{int(withdraw_fee_rate*100)}%\n"
+        bill += f"出款汇率：{format_exchange_rate(exchange_rate_withdraw)}  |  费率：{int(withdraw_fee_rate*100)}%\n"
     bill += f"总入款：{int(total_deposit)}  |  {int(total_deposit_adjusted)}u\n"
     if withdraw_count > 0:
         bill += f"总出款：{int(total_withdraw)}  |  {int(total_withdraw_adjusted)}u\n"
     bill += f"总余额：{balance_str}u"
 
     await update.message.reply_text(bill if transactions else "无交易记录")
+
+# 格式化汇率函数
+def format_exchange_rate(rate):
+    return f"{rate:.3f}" if abs(rate * 1000 % 10) >= 1 else f"{rate:.2f}"
 
 # 处理所有消息
 async def handle_message(update, context):
@@ -130,10 +134,10 @@ async def handle_message(update, context):
         print(f"匹配到 '设置入款汇率' 指令，汇率: {message_text.replace('设置入款汇率', '').strip()}")
         try:
             rate = float(message_text.replace("设置入款汇率", "").strip())
-            exchange_rate_deposit = round(rate, 2)  # 限制两位小数
-            await update.message.reply_text(f"设置成功入款汇率 {exchange_rate_deposit:.2f}")
+            exchange_rate_deposit = round(rate, 3)  # 保留三位小数以便判断
+            await update.message.reply_text(f"设置成功入款汇率 {format_exchange_rate(exchange_rate_deposit)}")
         except ValueError:
-            await update.message.reply_text("请输入正确汇率，例如：设置入款汇率0.94")
+            await update.message.reply_text("请输入正确汇率，例如：设置入款汇率0.98")
     elif message_text.startswith("设置入款费率"):
         print(f"匹配到 '设置入款费率' 指令，费率: {message_text.replace('设置入款费率', '').strip()}")
         try:
@@ -146,8 +150,8 @@ async def handle_message(update, context):
         print(f"匹配到 '设置下发汇率' 指令，汇率: {message_text.replace('设置下发汇率', '').strip()}")
         try:
             rate = float(message_text.replace("设置下发汇率", "").strip())
-            exchange_rate_withdraw = round(rate, 2)  # 限制两位小数
-            await update.message.reply_text(f"设置成功下发汇率 {exchange_rate_withdraw:.2f}")
+            exchange_rate_withdraw = round(rate, 3)  # 保留三位小数以便判断
+            await update.message.reply_text(f"设置成功下发汇率 {format_exchange_rate(exchange_rate_withdraw)}")
         except ValueError:
             await update.message.reply_text("请输入正确汇率，例如：设置下发汇率1.25")
     elif message_text.startswith("设置下发费率"):
@@ -168,8 +172,8 @@ async def handle_message(update, context):
             if "账单" in target_text:  # 检查是否为账单消息
                 for line in target_text.split("\n"):
                     if line.startswith("入款 ") and any(str(amount) in line for amount in [t.split(" -> ")[0].split()[1] for t in transactions if t.startswith("入款")]):
-                        amount_str = line.split("*")[0].split()[-1]
-                        amount = float(amount_str.replace("u", ""))
+                        amount_str = line.split("*")[0].split()[-1].replace("u", "").strip()
+                        amount = float(amount_str)
                         for t in transactions[:]:
                             if t.startswith("入款"):
                                 trans_amount = float(t.split(" -> ")[0].split()[1])
@@ -177,11 +181,11 @@ async def handle_message(update, context):
                                     transactions.remove(t)
                                     adjusted = float(t.split(" -> ")[1].split()[0])
                                     adjusted_str = f"{int(adjusted)}" if adjusted.is_integer() else f"{adjusted:.2f}"
-                                    await update.message.reply_text(f"入款 {amount_str} -> {adjusted_str}u 这条消息删除功能为删除这笔入款记录")
+                                    await update.message.reply_text(f"入款 {amount_str} -> {adjusted_str}u 已被撤销")
                                     return
                     elif line.startswith("下发 ") and any(str(amount) in line for amount in [t.split(" -> ")[0].split()[1] for t in transactions if t.startswith("下发")]):
-                        amount_str = line.split("*")[0].split()[-1]
-                        amount = float(amount_str.replace("u", ""))
+                        amount_str = line.split("*")[0].split()[-1].replace("u", "").strip()
+                        amount = float(amount_str)
                         for t in transactions[:]:
                             if t.startswith("下发"):
                                 trans_amount = float(t.split(" -> ")[0].split()[1])
@@ -189,7 +193,7 @@ async def handle_message(update, context):
                                     transactions.remove(t)
                                     adjusted = float(t.split(" -> ")[1].split()[0])
                                     adjusted_str = f"{int(adjusted)}" if adjusted.is_integer() else f"{adjusted:.2f}"
-                                    await update.message.reply_text(f"下发 {amount_str} -> {adjusted_str}u 这条消息删除功能为删除这笔出款记录")
+                                    await update.message.reply_text(f"下发 {amount_str} -> {adjusted_str}u 已被撤销")
                                     return
                 await update.message.reply_text("未找到对应的交易记录")
             else:
