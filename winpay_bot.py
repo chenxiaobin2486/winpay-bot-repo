@@ -114,7 +114,7 @@ def main():
     setup_schedule()
 
     # 設置 Webhook（使用 Render 的公共 URL）
-    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_URL', 'your-render-url.onrender.com')}/webhook"
+    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_URL', 'winpay-bot-repo.onrender.com')}/webhook"
     application.run_webhook(
         listen="0.0.0.0",
         port=port,
