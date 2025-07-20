@@ -40,7 +40,8 @@ async def handle_bill(update, context):
         for t in reversed([t for t in recent_transactions if t.startswith("入款")]):
             amount = float(t.split(" -> ")[0].split()[1])
             adjusted = float(t.split(" -> ")[1].split()[0])
-            bill += f"{time.strftime('%H:%M')}  {amount}*(1-{deposit_fee_rate*100}%)/{exchange_rate_deposit}={adjusted:.2f}u\n"
+            effective_rate = 1 - deposit_fee_rate
+            bill += f"{amount}*{effective_rate:.2f}/{exchange_rate_deposit}={adjusted:.2f}u\n"
 
     # 出款部分（若有出款）
     if withdraw_count > 0:
@@ -48,7 +49,8 @@ async def handle_bill(update, context):
         for t in reversed([t for t in recent_transactions if t.startswith("下发")]):
             amount = float(t.split(" -> ")[0].split()[1])
             adjusted = float(t.split(" -> ")[1].split()[0])
-            bill += f"{time.strftime('%H:%M')}  {amount}*(1+{withdraw_fee_rate*100}%)/{exchange_rate_withdraw}={adjusted:.2f}u\n"
+            effective_rate = 1 + withdraw_fee_rate
+            bill += f"{amount}*{effective_rate:.2f}/{exchange_rate_withdraw}={adjusted:.2f}u\n"
 
     # 统计信息
     total_deposit = sum(float(t.split(" -> ")[0].split()[1]) for t in transactions if t.startswith("入款"))
@@ -57,9 +59,9 @@ async def handle_bill(update, context):
     total_withdraw_adjusted = sum(float(t.split(" -> ")[1].split()[0]) for t in transactions if t.startswith("下发"))
     balance = total_deposit_adjusted - total_withdraw_adjusted
 
-    bill += f"入款汇率：{exchange_rate_deposit}  |  费率：{deposit_fee_rate*100}%\n"
+    bill += f"入款汇率：{exchange_rate_deposit}  |  费率：{int(deposit_fee_rate*100)}%\n"
     if withdraw_count > 0:
-        bill += f"出款汇率：{exchange_rate_withdraw}  |  费率：{withdraw_fee_rate*100}%\n"
+        bill += f"出款汇率：{exchange_rate_withdraw}  |  费率：{int(withdraw_fee_rate*100)}%\n"
     bill += f"总入款：{total_deposit:.0f}  |  {total_deposit_adjusted:.2f}u\n"
     if withdraw_count > 0:
         bill += f"总出款：{total_withdraw:.0f}  |  {total_withdraw_adjusted:.2f}u\n"
@@ -128,7 +130,7 @@ async def handle_message(update, context):
         try:
             rate = float(message_text.replace("设置入款费率", "").strip()) / 100
             deposit_fee_rate = rate
-            await update.message.reply_text(f"设置成功入款费率 {rate*100}%")
+            await update.message.reply_text(f"设置成功入款费率 {int(rate*100)}%")
         except ValueError:
             await update.message.reply_text("请输入正确费率，例如：设置入款费率8")
     elif message_text.startswith("设置下发汇率"):
@@ -144,7 +146,7 @@ async def handle_message(update, context):
         try:
             rate = float(message_text.replace("设置下发费率", "").strip()) / 100
             withdraw_fee_rate = rate
-            await update.message.reply_text(f"设置成功下发费率 {rate*100}%")
+            await update.message.reply_text(f"设置成功下发费率 {int(rate*100)}%")
         except ValueError:
             await update.message.reply_text("请输入正确费率，例如：设置下发费率8")
     elif message_text == "账单" or message_text == "+0":
