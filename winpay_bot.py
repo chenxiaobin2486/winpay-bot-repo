@@ -11,7 +11,7 @@ import asyncio
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7908773608:AAFFqLmGkJ9zbsuymQTFzJxy5IyeN1E9M-U")
 
 # 定义全局变量
-operators = {"8041296886": True}
+operators = {"8041296886": True}  # 初始管理员
 transactions = []
 exchange_rate_deposit = 1.0
 deposit_fee_rate = 0.0
@@ -80,7 +80,7 @@ def format_exchange_rate(rate):
 
 # 处理所有消息
 async def handle_message(update, context):
-    global exchange_rate_deposit, deposit_fee_rate, exchange_rate_withdraw, withdraw_fee_rate
+    global exchange_rate_deposit, deposit_fee_rate, exchange_rate_withdraw, withdraw_fee_rate, operators
     message_text = update.message.text.strip()
     user_id = str(update.message.from_user.id)
     print(f"收到消息: '{message_text}' 从用户 {user_id}")
@@ -88,10 +88,10 @@ async def handle_message(update, context):
     if message_text == "开始":
         print("匹配到 '开始' 指令")
         user = update.message.from_user.username
-        await update.message.reply_text(f"欢迎使用winpay小秘书 @{user}")
+        await update.message.reply_text(f"欢迎使用winpay小秘书")
     elif message_text == "说明":
         print("匹配到 '说明' 指令")
-        help_text = "可用指令：\n开始 - 开始使用\n入款 <金额> 或 +<金额> - 记录入款\n下发 <金额> - 申请下发\n设置操作员 <用户名> - 设置操作员\n设置入款汇率 <数值> - 设置入款汇率\n设置入款费率 <数值> - 设置入款费率\n设置下发汇率 <数值> - 设置下发汇率\n设置下发费率 <数值> - 设置下发费率\n账单 或 +0 - 查看交易记录\n删除 - 删除指定交易记录\n日切 - 清空记录（仅限操作员）\nTRX地址验证 - 验证TRX地址"
+        help_text = "可用指令：\n开始 - 开始使用\n入款  或 + - 记录入款\n下发 \n设置操作员 @<用户名> - 设置操作员\n设置入款汇率  \n设置入款费率 \n设置下发汇率 \n设置下发费率 \n账单 或 +0 \n删除 - 删除指定交易记录\n日切 - 清空记录（仅限操作员）\nTRX地址验证 - 验证TRX地址"
         await update.message.reply_text(help_text)
     elif (message_text.startswith("入款") or message_text.startswith("+")) and message_text != "+0":
         print(f"匹配到 '入款' 或 '+' 指令，金额: {message_text.replace('入款', '').replace('+', '').strip()}")
@@ -123,18 +123,22 @@ async def handle_message(update, context):
         except ValueError:
             await update.message.reply_text("请输入正确金额，例如：下发500")
     elif message_text.startswith("设置操作员"):
-        print(f"匹配到 '设置操作员' 指令，用户名: {message_text.replace('设置操作员', '').strip()}")
-        if user_id == "8041296886":
+        print(f"匹配到 '设置操作员' 指令，参数: {message_text.replace('设置操作员', '').strip()}")
+        if user_id == "8041296886":  # 仅限初始管理员设置
             operator = message_text.replace("设置操作员", "").strip()
-            operators[operator] = True
-            await update.message.reply_text(f"已将 @{operator} 设置为操作员")
+            if operator.startswith("@"):
+                operator = operator[1:]  # 移除 @ 符号
+                operators[operator] = True
+                await update.message.reply_text(f"已将 @{operator} 设置为操作员")
+            else:
+                await update.message.reply_text("请使用格式：设置操作员 @用户名")
         else:
             await update.message.reply_text("仅限最高管理员设置操作员")
     elif message_text.startswith("设置入款汇率"):
         print(f"匹配到 '设置入款汇率' 指令，汇率: {message_text.replace('设置入款汇率', '').strip()}")
         try:
             rate = float(message_text.replace("设置入款汇率", "").strip())
-            exchange_rate_deposit = round(rate, 3)  # 保留三位小数以便判断
+            exchange_rate_deposit = round(rate, 3)
             await update.message.reply_text(f"设置成功入款汇率 {format_exchange_rate(exchange_rate_deposit)}")
         except ValueError:
             await update.message.reply_text("请输入正确汇率，例如：设置入款汇率0.98")
@@ -150,7 +154,7 @@ async def handle_message(update, context):
         print(f"匹配到 '设置下发汇率' 指令，汇率: {message_text.replace('设置下发汇率', '').strip()}")
         try:
             rate = float(message_text.replace("设置下发汇率", "").strip())
-            exchange_rate_withdraw = round(rate, 3)  # 保留三位小数以便判断
+            exchange_rate_withdraw = round(rate, 3)
             await update.message.reply_text(f"设置成功下发汇率 {format_exchange_rate(exchange_rate_withdraw)}")
         except ValueError:
             await update.message.reply_text("请输入正确汇率，例如：设置下发汇率1.25")
@@ -169,32 +173,38 @@ async def handle_message(update, context):
         print("匹配到 '删除' 指令")
         if update.message.reply_to_message:
             target_text = update.message.reply_to_message.text
-            if "账单" in target_text:  # 检查是否为账单消息
+            if "账单" in target_text:
                 for line in target_text.split("\n"):
-                    if line.startswith("入款 ") and any(str(amount) in line for amount in [t.split(" -> ")[0].split()[1] for t in transactions if t.startswith("入款")]):
+                    if line.startswith("入款 "):
                         amount_str = line.split("*")[0].split()[-1].replace("u", "").strip()
-                        amount = float(amount_str)
-                        for t in transactions[:]:
-                            if t.startswith("入款"):
-                                trans_amount = float(t.split(" -> ")[0].split()[1])
-                                if trans_amount == amount:
-                                    transactions.remove(t)
-                                    adjusted = float(t.split(" -> ")[1].split()[0])
-                                    adjusted_str = f"{int(adjusted)}" if adjusted.is_integer() else f"{adjusted:.2f}"
-                                    await update.message.reply_text(f"入款 {amount_str} -> {adjusted_str}u 已被撤销")
-                                    return
-                    elif line.startswith("下发 ") and any(str(amount) in line for amount in [t.split(" -> ")[0].split()[1] for t in transactions if t.startswith("下发")]):
+                        try:
+                            amount = float(amount_str)
+                            for t in transactions[:]:
+                                if t.startswith("入款"):
+                                    trans_amount = float(t.split(" -> ")[0].split()[1])
+                                    if trans_amount == amount:
+                                        transactions.remove(t)
+                                        adjusted = float(t.split(" -> ")[1].split()[0])
+                                        adjusted_str = f"{int(adjusted)}" if adjusted.is_integer() else f"{adjusted:.2f}"
+                                        await update.message.reply_text(f"入款 {amount_str} -> {adjusted_str}u 已被撤销")
+                                        return
+                        except ValueError:
+                            continue
+                    elif line.startswith("下发 "):
                         amount_str = line.split("*")[0].split()[-1].replace("u", "").strip()
-                        amount = float(amount_str)
-                        for t in transactions[:]:
-                            if t.startswith("下发"):
-                                trans_amount = float(t.split(" -> ")[0].split()[1])
-                                if trans_amount == amount:
-                                    transactions.remove(t)
-                                    adjusted = float(t.split(" -> ")[1].split()[0])
-                                    adjusted_str = f"{int(adjusted)}" if adjusted.is_integer() else f"{adjusted:.2f}"
-                                    await update.message.reply_text(f"下发 {amount_str} -> {adjusted_str}u 已被撤销")
-                                    return
+                        try:
+                            amount = float(amount_str)
+                            for t in transactions[:]:
+                                if t.startswith("下发"):
+                                    trans_amount = float(t.split(" -> ")[0].split()[1])
+                                    if trans_amount == amount:
+                                        transactions.remove(t)
+                                        adjusted = float(t.split(" -> ")[1].split()[0])
+                                        adjusted_str = f"{int(adjusted)}" if adjusted.is_integer() else f"{adjusted:.2f}"
+                                        await update.message.reply_text(f"下发 {amount_str} -> {adjusted_str}u 已被撤销")
+                                        return
+                        except ValueError:
+                            continue
                 await update.message.reply_text("未找到对应的交易记录")
             else:
                 await update.message.reply_text("请回复目标交易相关消息")
