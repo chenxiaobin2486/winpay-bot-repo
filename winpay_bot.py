@@ -18,6 +18,55 @@ deposit_fee_rate = 0.0
 exchange_rate_withdraw = 1.0
 withdraw_fee_rate = 0.0
 
+# 设置日志任务
+def setup_schedule():
+    schedule.every().day.at("00:00").do(lambda: asyncio.run(job()))
+
+# 定义日志功能
+async def job():
+    print("执行日志任务", time.ctime())
+
+# 账单处理函数
+async def handle_bill(update, context):
+    # 获取最近 6 笔交易
+    recent_transactions = transactions[-6:] if len(transactions) >= 6 else transactions
+    bill = "账单\n"
+    deposit_count = sum(1 for t in recent_transactions if t.startswith("入款"))
+    withdraw_count = sum(1 for t in recent_transactions if t.startswith("下发"))
+
+    # 入款部分
+    if deposit_count > 0:
+        bill += f"入款（{deposit_count}笔）\n"
+        for t in reversed([t for t in recent_transactions if t.startswith("入款")]):
+            amount = float(t.split(" -> ")[0].split()[1])
+            adjusted = float(t.split(" -> ")[1].split()[0])
+            bill += f"{time.strftime('%H:%M')}  {amount}*(1-{deposit_fee_rate*100}%)/{exchange_rate_deposit}={adjusted:.2f}u\n"
+
+    # 出款部分（若有出款）
+    if withdraw_count > 0:
+        bill += f"出款（{withdraw_count}笔）\n"
+        for t in reversed([t for t in recent_transactions if t.startswith("下发")]):
+            amount = float(t.split(" -> ")[0].split()[1])
+            adjusted = float(t.split(" -> ")[1].split()[0])
+            bill += f"{time.strftime('%H:%M')}  {amount}*(1+{withdraw_fee_rate*100}%)/{exchange_rate_withdraw}={adjusted:.2f}u\n"
+
+    # 统计信息
+    total_deposit = sum(float(t.split(" -> ")[0].split()[1]) for t in transactions if t.startswith("入款"))
+    total_deposit_adjusted = sum(float(t.split(" -> ")[1].split()[0]) for t in transactions if t.startswith("入款"))
+    total_withdraw = sum(float(t.split(" -> ")[0].split()[1]) for t in transactions if t.startswith("下发"))
+    total_withdraw_adjusted = sum(float(t.split(" -> ")[1].split()[0]) for t in transactions if t.startswith("下发"))
+    balance = total_deposit_adjusted - total_withdraw_adjusted
+
+    bill += f"入款汇率：{exchange_rate_deposit}  |  费率：{deposit_fee_rate*100}%\n"
+    if withdraw_count > 0:
+        bill += f"出款汇率：{exchange_rate_withdraw}  |  费率：{withdraw_fee_rate*100}%\n"
+    bill += f"总入款：{total_deposit:.0f}  |  {total_deposit_adjusted:.2f}u\n"
+    if withdraw_count > 0:
+        bill += f"总出款：{total_withdraw:.0f}  |  {total_withdraw_adjusted:.2f}u\n"
+    bill += f"总余额：{balance:.2f}u"
+
+    await update.message.reply_text(bill if transactions else "无交易记录")
+
 # 处理所有消息
 async def handle_message(update, context):
     global exchange_rate_deposit, deposit_fee_rate, exchange_rate_withdraw, withdraw_fee_rate
@@ -28,10 +77,10 @@ async def handle_message(update, context):
     if message_text == "开始":
         print("匹配到 '开始' 指令")
         user = update.message.from_user.username
-        await update.message.reply_text(f"欢迎使用winpay小秘书")
+        await update.message.reply_text(f"欢迎使用winpay小秘书 @{user}")
     elif message_text == "说明":
         print("匹配到 '说明' 指令")
-        help_text = "可用指令：\n开始 - 开始使用\n入款 或 + \n下发 \n设置操作员 <用户名> \n设置入款汇率 \n设置入款费率 \n设置下发汇率 \n设置下发费率 \n账单 或 +0 \n删除入款 - 删除指定入款记录\n删除出款 - 删除指定出款记录\n日切 - 清空记录（仅限操作员）\nTRX地址验证 - 验证TRX地址"
+        help_text = "可用指令：\n开始 - 开始使用\n入款 <金额> 或 +<金额> - 记录入款\n下发 <金额> - 申请下发\n设置操作员 <用户名> - 设置操作员\n设置入款汇率 <数值> - 设置入款汇率\n设置入款费率 <数值> - 设置入款费率\n设置下发汇率 <数值> - 设置下发汇率\n设置下发费率 <数值> - 设置下发费率\n账单 或 +0 - 查看交易记录\n删除入款 - 删除指定入款记录\n删除出款 - 删除指定出款记录\n日切 - 清空记录（仅限操作员）\nTRX地址验证 - 验证TRX地址"
         await update.message.reply_text(help_text)
     elif (message_text.startswith("入款") or message_text.startswith("+")) and message_text != "+0":
         print(f"匹配到 '入款' 或 '+' 指令，金额: {message_text.replace('入款', '').replace('+', '').strip()}")
@@ -148,47 +197,6 @@ async def handle_message(update, context):
         print(f"未匹配到任何指令: '{message_text}'")
         await update.message.reply_text("未知指令，请输入说明查看帮助")
 
-# 账单处理函数
-async def handle_bill(update, context):
-    # 获取最近 6 笔交易
-    recent_transactions = transactions[-6:] if len(transactions) >= 6 else transactions
-    bill = "账单\n"
-    deposit_count = sum(1 for t in recent_transactions if t.startswith("入款"))
-    withdraw_count = sum(1 for t in recent_transactions if t.startswith("下发"))
-
-    # 入款部分
-    if deposit_count > 0:
-        bill += f"入款（{deposit_count}笔）\n"
-        for t in reversed([t for t in recent_transactions if t.startswith("入款")]):
-            amount = float(t.split(" -> ")[0].split()[1])
-            adjusted = float(t.split(" -> ")[1].split()[0])
-            bill += f"{time.strftime('%H:%M')}  {amount}*(1-{deposit_fee_rate*100}%)/{exchange_rate_deposit}={adjusted:.2f}u\n"
-
-    # 出款部分（若有出款）
-    if withdraw_count > 0:
-        bill += f"出款（{withdraw_count}笔）\n"
-        for t in reversed([t for t in recent_transactions if t.startswith("下发")]):
-            amount = float(t.split(" -> ")[0].split()[1])
-            adjusted = float(t.split(" -> ")[1].split()[0])
-            bill += f"{time.strftime('%H:%M')}  {amount}*(1+{withdraw_fee_rate*100}%)/{exchange_rate_withdraw}={adjusted:.2f}u\n"
-
-    # 统计信息
-    total_deposit = sum(float(t.split(" -> ")[0].split()[1]) for t in transactions if t.startswith("入款"))
-    total_deposit_adjusted = sum(float(t.split(" -> ")[1].split()[0]) for t in transactions if t.startswith("入款"))
-    total_withdraw = sum(float(t.split(" -> ")[0].split()[1]) for t in transactions if t.startswith("下发"))
-    total_withdraw_adjusted = sum(float(t.split(" -> ")[1].split()[0]) for t in transactions if t.startswith("下发"))
-    balance = total_deposit_adjusted - total_withdraw_adjusted
-
-    bill += f"入款汇率：{exchange_rate_deposit}  |  费率：{deposit_fee_rate*100}%\n"
-    if withdraw_count > 0:
-        bill += f"出款汇率：{exchange_rate_withdraw}  |  费率：{withdraw_fee_rate*100}%\n"
-    bill += f"总入款：{total_deposit:.0f}  |  {total_deposit_adjusted:.2f}u\n"
-    if withdraw_count > 0:
-        bill += f"总出款：{total_withdraw:.0f}  |  {total_withdraw_adjusted:.2f}u\n"
-    bill += f"总余额：{balance:.2f}u"
-
-    await update.message.reply_text(bill if transactions else "无交易记录")
-
 # 主函数
 def main():
     # 获取 Render 环境变量 PORT
@@ -227,11 +235,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-# 设置日志任务
-def setup_schedule():
-    schedule.every().day.at("00:00").do(lambda: asyncio.run(job()))
-
-# 定义日志功能
-async def job():
-    print("执行日志任务", time.ctime())
