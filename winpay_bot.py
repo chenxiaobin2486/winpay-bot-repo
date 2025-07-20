@@ -38,23 +38,29 @@ async def handle_bill(update, context):
     if deposit_count > 0:
         bill += f"入款（{deposit_count}笔）\n"
         for t in reversed([t for t in recent_transactions if t.startswith("入款")]):
-            amount = float(t.split(" -> ")[0].split()[1].rstrip('u'))
-            adjusted = float(t.split(" -> ")[1].split()[0].rstrip('u'))
+            parts = t.split(" -> ")
+            amount = float(parts[0].split()[1].rstrip('u'))
+            adjusted = float(parts[1].split()[0].rstrip('u'))
+            timestamp = parts[0].split()[2]  # 获取时间
+            operator = parts[1].split(" (由 ")[1].rstrip(")")
             effective_rate = 1 - deposit_fee_rate
             amount_str = f"{int(amount)}" if amount.is_integer() else f"{amount:.2f}"
             adjusted_str = f"{int(adjusted)}" if adjusted.is_integer() else f"{adjusted:.2f}"
-            bill += f"{amount_str}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_deposit)}={adjusted_str}u\n"
+            bill += f"{timestamp}  {amount_str}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_deposit)}={adjusted_str}u  ({operator})\n"
 
     # 出款部分（若有出款）
     if withdraw_count > 0:
         bill += f"出款（{withdraw_count}笔）\n"
         for t in reversed([t for t in recent_transactions if t.startswith("下发")]):
-            amount = float(t.split(" -> ")[0].split()[1].rstrip('u'))
-            adjusted = float(t.split(" -> ")[1].split()[0].rstrip('u'))
+            parts = t.split(" -> ")
+            amount = float(parts[0].split()[1].rstrip('u'))
+            adjusted = float(parts[1].split()[0].rstrip('u'))
+            timestamp = parts[0].split()[2]  # 获取时间
+            operator = parts[1].split(" (由 ")[1].rstrip(")")
             effective_rate = 1 + withdraw_fee_rate
             amount_str = f"{int(amount)}" if amount.is_integer() else f"{amount:.2f}"
             adjusted_str = f"{int(adjusted)}" if adjusted.is_integer() else f"{adjusted:.2f}"
-            bill += f"{amount_str}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_withdraw)}={adjusted_str}u\n"
+            bill += f"{timestamp}  {amount_str}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_withdraw)}={adjusted_str}u  ({operator})\n"
 
     # 统计信息
     total_deposit = sum(float(t.split(" -> ")[0].split()[1].rstrip('u')) for t in transactions if t.startswith("入款"))
@@ -91,14 +97,13 @@ async def handle_message(update, context):
     global exchange_rate_deposit, deposit_fee_rate, exchange_rate_withdraw, withdraw_fee_rate, operators
     message_text = update.message.text.strip()
     user_id = str(update.message.from_user.id)
+    operator_name = update.message.from_user.first_name or update.message.from_user.username or user_id
     print(f"收到消息: '{message_text}' 从用户 {user_id}")
 
     if message_text == "开始":
         if user_id in operators:
             print("匹配到 '开始' 指令")
             await update.message.reply_text("欢迎使用winpay小秘书")
-        else:
-            await update.message.reply_text("仅限操作员使用此功能")
     elif message_text == "说明":
         print("匹配到 '说明' 指令")
         help_text = """
@@ -121,30 +126,30 @@ async def handle_message(update, context):
             print(f"匹配到 '入款' 或 '+' 指令，金额: {message_text.replace('入款', '').replace('+', '').strip()}")
             try:
                 amount_str = message_text.replace("入款", "").replace("+", "").strip()
+                timestamp = time.strftime("%H:%M")
                 if amount_str.lower().endswith('u'):
                     amount = float(amount_str.rstrip('uU'))
-                    transaction = f"入款 {amount}u -> {amount}u (由 {user_id})"
+                    transaction = f"入款 {amount}u {timestamp} -> {amount}u (由 {operator_name})"
                 else:
                     amount = float(amount_str)
                     adjusted_amount = amount * (1 - deposit_fee_rate) / exchange_rate_deposit
                     amount_str = f"{int(amount)}" if amount.is_integer() else f"{amount:.2f}"
                     adjusted_str = f"{int(adjusted_amount)}" if adjusted_amount.is_integer() else f"{adjusted_amount:.2f}"
-                    transaction = f"入款 {amount_str} -> {adjusted_str}u (由 {user_id})"
+                    transaction = f"入款 {amount_str} {timestamp} -> {adjusted_str}u (由 {operator_name})"
                 transactions.append(transaction)
                 # 直接显示账单
                 await handle_bill(update, context)
             except ValueError:
                 await update.message.reply_text("请输入正确金额，例如：入款1000 或 +1000 或 +100u")
-        else:
-            await update.message.reply_text("仅限操作员使用此功能")
     elif message_text.startswith("下发"):
         if user_id in operators:
             print(f"匹配到 '下发' 指令，金额: {message_text.replace('下发', '').strip()}")
             try:
                 amount_str = message_text.replace("下发", "").strip()
+                timestamp = time.strftime("%H:%M")
                 if amount_str.lower().endswith('u'):
                     amount = float(amount_str.rstrip('uU'))
-                    transaction = f"下发 {amount}u -> {amount}u (由 {user_id})"
+                    transaction = f"下发 {amount}u {timestamp} -> {amount}u (由 {operator_name})"
                     transactions.append(transaction)
                     # 直接显示账单
                     await handle_bill(update, context)
@@ -153,14 +158,12 @@ async def handle_message(update, context):
                     adjusted_amount = amount * (1 + withdraw_fee_rate) / exchange_rate_withdraw
                     amount_str = f"{int(amount)}" if amount.is_integer() else f"{amount:.2f}"
                     adjusted_str = f"{int(adjusted_amount)}" if adjusted_amount.is_integer() else f"{adjusted_amount:.2f}"
-                    transaction = f"下发 {amount_str} -> {adjusted_str}u (由 {user_id})"
+                    transaction = f"下发 {amount_str} {timestamp} -> {adjusted_str}u (由 {operator_name})"
                     transactions.append(transaction)
                     # 直接显示账单
                     await handle_bill(update, context)
             except ValueError:
                 await update.message.reply_text("请输入正确金额，例如：下发500 或 下发50u")
-        else:
-            await update.message.reply_text("仅限操作员使用此功能")
     elif message_text.startswith("设置操作员"):
         if user_id in operators:
             print(f"匹配到 '设置操作员' 指令，参数: {message_text.replace('设置操作员', '').strip()}")
@@ -174,8 +177,6 @@ async def handle_message(update, context):
                     await update.message.reply_text("请使用格式：设置操作员 @用户名")
             else:
                 await update.message.reply_text("仅限最高管理员设置操作员")
-        else:
-            await update.message.reply_text("仅限操作员使用此功能")
     elif message_text.startswith("设置入款汇率"):
         if user_id in operators:
             print(f"匹配到 '设置入款汇率' 指令，汇率: {message_text.replace('设置入款汇率', '').strip()}")
@@ -185,8 +186,6 @@ async def handle_message(update, context):
                 await update.message.reply_text(f"设置成功入款汇率 {format_exchange_rate(exchange_rate_deposit)}")
             except ValueError:
                 await update.message.reply_text("请输入正确汇率，例如：设置入款汇率0.98")
-        else:
-            await update.message.reply_text("仅限操作员使用此功能")
     elif message_text.startswith("设置入款费率"):
         if user_id in operators:
             print(f"匹配到 '设置入款费率' 指令，费率: {message_text.replace('设置入款费率', '').strip()}")
@@ -196,8 +195,6 @@ async def handle_message(update, context):
                 await update.message.reply_text(f"设置成功入款费率 {int(rate*100)}%")
             except ValueError:
                 await update.message.reply_text("请输入正确费率，例如：设置入款费率8")
-        else:
-            await update.message.reply_text("仅限操作员使用此功能")
     elif message_text.startswith("设置下发汇率"):
         if user_id in operators:
             print(f"匹配到 '设置下发汇率' 指令，汇率: {message_text.replace('设置下发汇率', '').strip()}")
@@ -207,8 +204,6 @@ async def handle_message(update, context):
                 await update.message.reply_text(f"设置成功下发汇率 {format_exchange_rate(exchange_rate_withdraw)}")
             except ValueError:
                 await update.message.reply_text("请输入正确汇率，例如：设置下发汇率1.25")
-        else:
-            await update.message.reply_text("仅限操作员使用此功能")
     elif message_text.startswith("设置下发费率"):
         if user_id in operators:
             print(f"匹配到 '设置下发费率' 指令，费率: {message_text.replace('设置下发费率', '').strip()}")
@@ -218,8 +213,6 @@ async def handle_message(update, context):
                 await update.message.reply_text(f"设置成功下发费率 {int(rate*100)}%")
             except ValueError:
                 await update.message.reply_text("请输入正确费率，例如：设置下发费率8")
-        else:
-            await update.message.reply_text("仅限操作员使用此功能")
     elif message_text == "账单" or message_text == "+0":
         print("匹配到 '账单' 或 '+0' 指令")
         await handle_bill(update, context)
@@ -256,28 +249,19 @@ async def handle_message(update, context):
                 await update.message.reply_text("无法撤销此消息，请确保回复正确的入款或下发记录")
             else:
                 await update.message.reply_text("请回复目标交易相关消息以删除")
-        else:
-            await update.message.reply_text("仅限操作员使用此功能")
     elif message_text == "删除账单":
         if user_id in operators:
             print("匹配到 '删除账单' 指令")
             transactions.clear()
             await update.message.reply_text("账单已清空，重新记账开始")
-        else:
-            await update.message.reply_text("仅限操作员使用此功能")
     elif message_text == "日切" and user_id == "8041296886":
         if user_id in operators:
             print("匹配到 '日切' 指令")
             transactions.clear()
             await update.message.reply_text("交易记录已清空")
-        else:
-            await update.message.reply_text("仅限操作员使用此功能")
     elif re.match(r'^[T][a-km-zA-HJ-NP-Z1-9]{33}$', message_text):
         print("匹配到 TRX 地址验证")
         await update.message.reply_text("TRX地址验证成功")
-    else:
-        print(f"未匹配到任何指令: '{message_text}'")
-        await update.message.reply_text("未知指令，请输入说明查看帮助")
 
 # 主函数
 def main():
