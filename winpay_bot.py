@@ -347,8 +347,9 @@ async def handle_message(update, context):
                     has_u = amount_str.lower().endswith('u')
                     for t in transactions[chat_id][:]:
                         if t.startswith("入款"):
-                            t_amount = float(t.split(" -> ")[0].split()[1].rstrip('u'))
-                            t_has_u = t.split()[1].endswith('u')
+                            t_parts = t.split(" -> ")[0].split()
+                            t_amount = float(t_parts[1].rstrip('u'))
+                            t_has_u = t_parts[1].endswith('u')
                             if t_amount == amount and has_u == t_has_u:
                                 transactions[chat_id].remove(t)
                                 await update.message.reply_text(f"入款 {format_amount(amount)}{'u' if has_u else ''} 已被撤销")
@@ -359,8 +360,9 @@ async def handle_message(update, context):
                     has_u = amount_str.lower().endswith('u')
                     for t in transactions[chat_id][:]:
                         if t.startswith("下发"):
-                            t_amount = float(t.split(" -> ")[0].split()[1].rstrip('u'))
-                            t_has_u = t.split()[1].endswith('u')
+                            t_parts = t.split(" -> ")[0].split()
+                            t_amount = float(t_parts[1].rstrip('u'))
+                            t_has_u = t_parts[1].endswith('u')
                             if t_amount == amount and has_u == t_has_u:
                                 transactions[chat_id].remove(t)
                                 await update.message.reply_text(f"下发 {format_amount(amount)}{'u' if has_u else ''} 已被撤销")
