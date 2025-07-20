@@ -91,7 +91,7 @@ def format_exchange_rate(rate):
 async def welcome_new_member(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     if update.message and update.message.new_chat_members:
         for member in update.message.new_chat_members:
-            nickname = member.first_name or member.username or "新朋友"
+            nickname = member.first_name.strip() if member.first_name else member.username or "新朋友"
             await update.message.reply_text(f"欢迎 {nickname} 来到本群")
 
 # 处理所有消息
@@ -99,8 +99,8 @@ async def handle_message(update, context):
     global exchange_rate_deposit, deposit_fee_rate, exchange_rate_withdraw, withdraw_fee_rate, operators
     message_text = update.message.text.strip()
     user_id = str(update.message.from_user.id)
-    # 获取昵称，仅使用 first_name
-    operator_name = update.message.from_user.first_name or "未知用户"
+    # 获取昵称，仅使用 first_name，保留空格
+    operator_name = update.message.from_user.first_name.strip() if update.message.from_user.first_name else "未知用户"
     print(f"收到消息: '{message_text}' 从用户 {user_id}")
 
     if message_text == "开始":
