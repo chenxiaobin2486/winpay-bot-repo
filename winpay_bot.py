@@ -228,23 +228,19 @@ async def handle_message(update, context):
             if update.message.reply_to_message:
                 original_message = update.message.reply_to_message.text.strip()
                 if original_message.startswith("+") and not original_message == "+0":
-                    amount = float(original_message.replace("+", "").strip().rstrip('uU'))
                     for t in transactions[:]:
-                        if t.startswith("入款"):
-                            trans_amount = float(t.split(" -> ")[0].split()[1].rstrip('u'))
-                            if trans_amount == amount:
-                                transactions.remove(t)
-                                await update.message.reply_text(f"入款 {int(amount)} 已被撤销")
-                                return
+                        if t == original_message:
+                            transactions.remove(t)
+                            amount = float(t.split(" -> ")[0].split()[1].rstrip('u'))
+                            await update.message.reply_text(f"入款 {int(amount)} 已被撤销")
+                            return
                 elif original_message.startswith("下发"):
-                    amount = float(original_message.replace("下发", "").strip().rstrip('uU'))
                     for t in transactions[:]:
-                        if t.startswith("下发"):
-                            trans_amount = float(t.split(" -> ")[0].split()[1].rstrip('u'))
-                            if trans_amount == amount:
-                                transactions.remove(t)
-                                await update.message.reply_text(f"下发 {int(amount)} 已被撤销")
-                                return
+                        if t == original_message:
+                            transactions.remove(t)
+                            amount = float(t.split(" -> ")[0].split()[1].rstrip('u'))
+                            await update.message.reply_text(f"下发 {int(amount)} 已被撤销")
+                            return
                 await update.message.reply_text("无法撤销此消息，请确保回复正确的入款或下发记录")
             else:
                 await update.message.reply_text("请回复目标交易相关消息以删除")
