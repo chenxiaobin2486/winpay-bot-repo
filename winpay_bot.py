@@ -54,15 +54,15 @@ async def handle_bill(update, context):
         for t in reversed([t for t in recent_transactions if t.startswith("入款")]):
             parts = t.split(" -> ")
             timestamp = parts[0].split()[2]
-            operator = parts[1].split(" (由 ")[1].rstrip(")")
+            operator = parts[1].split(" (")[1].rstrip(")") if len(parts) > 1 and " (" in parts[1] else "未知操作员"
             if "u" in parts[0]:
                 amount = float(parts[0].split()[1].rstrip('u'))
-                bill += f"{timestamp}  {format_amount(amount)}u (由 {operator})\n"
+                bill += f"{timestamp}  {format_amount(amount)}u ({operator})\n"
             else:
                 amount = float(parts[0].split()[1])
                 adjusted = float(parts[1].split()[0].rstrip('u'))
                 effective_rate = 1 - deposit_fee_rate
-                bill += f"{timestamp}  {format_amount(amount)}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_deposit)}={format_amount(adjusted)}u (由 {operator})\n"
+                bill += f"{timestamp}  {format_amount(amount)}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_deposit)}={format_amount(adjusted)}u ({operator})\n"
 
     # 出款部分
     if withdraw_count > 0:
@@ -72,15 +72,15 @@ async def handle_bill(update, context):
         for t in reversed([t for t in recent_transactions if t.startswith("下发")]):
             parts = t.split(" -> ")
             timestamp = parts[0].split()[2]
-            operator = parts[1].split(" (由 ")[1].rstrip(")")
+            operator = parts[1].split(" (")[1].rstrip(")") if len(parts) > 1 and " (" in parts[1] else "未知操作员"
             if "u" in parts[0]:
                 amount = float(parts[0].split()[1].rstrip('u'))
-                bill += f"{timestamp}  {format_amount(amount)}u (由 {operator})\n"
+                bill += f"{timestamp}  {format_amount(amount)}u ({operator})\n"
             else:
                 amount = float(parts[0].split()[1])
                 adjusted = float(parts[1].split()[0].rstrip('u'))
                 effective_rate = 1 + withdraw_fee_rate
-                bill += f"{timestamp}  {format_amount(amount)}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_withdraw)}={format_amount(adjusted)}u (由 {operator})\n"
+                bill += f"{timestamp}  {format_amount(amount)}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_withdraw)}={format_amount(adjusted)}u ({operator})\n"
 
     # 统计信息
     if deposit_count > 0 or withdraw_count > 0:
@@ -249,11 +249,11 @@ async def handle_message(update, context):
                 timestamp = utc_time.astimezone(beijing_tz).strftime("%H:%M")
                 if amount_str.lower().endswith('u'):
                     amount = float(amount_str.rstrip('uU'))
-                    transaction = f"入款 {format_amount(amount)}u {timestamp} -> {format_amount(amount)}u ( {operator_name})"
+                    transaction = f"入款 {format_amount(amount)}u {timestamp} -> {format_amount(amount)}u ({operator_name})"
                 else:
                     amount = float(amount_str)
                     adjusted_amount = amount * (1 - deposit_fee_rate) / exchange_rate_deposit
-                    transaction = f"入款 {format_amount(amount)} {timestamp} -> {format_amount(adjusted_amount)}u ( {operator_name})"
+                    transaction = f"入款 {format_amount(amount)} {timestamp} -> {format_amount(adjusted_amount)}u ({operator_name})"
                 transactions[chat_id].append(transaction)
                 print(f"交易记录添加: {transaction}")
                 await handle_bill(update, context)
@@ -268,11 +268,11 @@ async def handle_message(update, context):
                 timestamp = utc_time.astimezone(beijing_tz).strftime("%H:%M")
                 if amount_str.lower().endswith('u'):
                     amount = float(amount_str.rstrip('uU'))
-                    transaction = f"下发 {format_amount(amount)}u {timestamp} -> {format_amount(amount)}u ( {operator_name})"
+                    transaction = f"下发 {format_amount(amount)}u {timestamp} -> {format_amount(amount)}u ({operator_name})"
                 else:
                     amount = float(amount_str)
                     adjusted_amount = amount * (1 + withdraw_fee_rate) / exchange_rate_withdraw
-                    transaction = f"下发 {format_amount(amount)} {timestamp} -> {format_amount(adjusted_amount)}u ( {operator_name})"
+                    transaction = f"下发 {format_amount(amount)} {timestamp} -> {format_amount(adjusted_amount)}u ({operator_name})"
                 transactions[chat_id].append(transaction)
                 print(f"交易记录添加: {transaction}")
                 await handle_bill(update, context)
