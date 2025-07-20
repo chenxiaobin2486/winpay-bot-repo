@@ -6,6 +6,8 @@ import time
 import re
 import os
 import asyncio
+from datetime import datetime, timezone
+import pytz
 
 # 定义 Bot Token（从环境变量获取）
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7908773608:AAFFqLmGkJ9zbsuymQTFzJxy5IyeN1E9M-U")
@@ -97,7 +99,12 @@ async def handle_message(update, context):
     global exchange_rate_deposit, deposit_fee_rate, exchange_rate_withdraw, withdraw_fee_rate, operators
     message_text = update.message.text.strip()
     user_id = str(update.message.from_user.id)
-    operator_name = update.message.from_user.first_name or update.message.from_user.username or user_id
+    # 获取昵称，优先 first_name，若为空则用 username，再用 user_id
+    operator_name = update.message.from_user.first_name
+    if not operator_name:
+        operator_name = update.message.from_user.username
+    if not operator_name:
+        operator_name = user_id
     print(f"收到消息: '{message_text}' 从用户 {user_id}")
 
     if message_text == "开始":
@@ -126,7 +133,10 @@ async def handle_message(update, context):
             print(f"匹配到 '入款' 或 '+' 指令，金额: {message_text.replace('入款', '').replace('+', '').strip()}")
             try:
                 amount_str = message_text.replace("入款", "").replace("+", "").strip()
-                timestamp = time.strftime("%H:%M")
+                # 将 UTC 时间转换为北京时间 (UTC+8)
+                beijing_tz = pytz.timezone("Asia/Shanghai")
+                utc_time = update.message.date.replace(tzinfo=timezone.utc)
+                timestamp = utc_time.astimezone(beijing_tz).strftime("%H:%M")
                 if amount_str.lower().endswith('u'):
                     amount = float(amount_str.rstrip('uU'))
                     transaction = f"入款 {amount}u {timestamp} -> {amount}u (由 {operator_name})"
@@ -146,7 +156,10 @@ async def handle_message(update, context):
             print(f"匹配到 '下发' 指令，金额: {message_text.replace('下发', '').strip()}")
             try:
                 amount_str = message_text.replace("下发", "").strip()
-                timestamp = time.strftime("%H:%M")
+                # 将 UTC 时间转换为北京时间 (UTC+8)
+                beijing_tz = pytz.timezone("Asia/Shanghai")
+                utc_time = update.message.date.replace(tzinfo=timezone.utc)
+                timestamp = utc_time.astimezone(beijing_tz).strftime("%H:%M")
                 if amount_str.lower().endswith('u'):
                     amount = float(amount_str.rstrip('uU'))
                     transaction = f"下发 {amount}u {timestamp} -> {amount}u (由 {operator_name})"
