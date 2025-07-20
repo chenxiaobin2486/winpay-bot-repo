@@ -1,5 +1,6 @@
 import telegram
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from telegram.ext import Updater, CommandHandler, MessageHandler
+from telegram.ext.filters import Filters  # 分開匯入 Filters
 import schedule
 import time
 
