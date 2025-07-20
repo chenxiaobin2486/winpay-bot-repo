@@ -40,6 +40,7 @@ async def handle_bill(update, context):
     deposit_count = sum(1 for t in recent_transactions if t.startswith("入款"))
     withdraw_count = sum(1 for t in recent_transactions if t.startswith("下发"))
 
+    # 入款部分
     if deposit_count > 0:
         bill += f"入款（{deposit_count}笔）\n"
         for t in reversed([t for t in recent_transactions if t.startswith("入款")]):
@@ -53,6 +54,7 @@ async def handle_bill(update, context):
             adjusted_str = f"{int(adjusted)}" if adjusted.is_integer() else f"{adjusted:.2f}"
             bill += f"{timestamp}  {amount_str}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_deposit)}={adjusted_str}u  ({operator})\n"
 
+    # 出款部分
     if withdraw_count > 0:
         bill += f"出款（{withdraw_count}笔）\n"
         for t in reversed([t for t in recent_transactions if t.startswith("下发")]):
@@ -66,6 +68,7 @@ async def handle_bill(update, context):
             adjusted_str = f"{int(adjusted)}" if adjusted.is_integer() else f"{adjusted:.2f}"
             bill += f"{timestamp}  {amount_str}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_withdraw)}={adjusted_str}u  ({operator})\n"
 
+    # 统计信息
     total_deposit = sum(float(t.split(" -> ")[0].split()[1].rstrip('u')) for t in transactions[chat_id] if t.startswith("入款"))
     total_deposit_adjusted = sum(float(t.split(" -> ")[1].split()[0].rstrip('u')) for t in transactions[chat_id] if t.startswith("入款"))
     total_withdraw = sum(float(t.split(" -> ")[0].split()[1].rstrip('u')) for t in transactions[chat_id] if t.startswith("下发"))
@@ -73,12 +76,13 @@ async def handle_bill(update, context):
     balance = total_deposit_adjusted - total_withdraw_adjusted
     balance_str = f"{int(balance)}" if balance.is_integer() else f"{balance:.2f}"
 
-    bill += f"\n入款汇率：{format_exchange_rate(exchange_rate_deposit)}  |  费率：{int(deposit_fee_rate*100)}%\n"
+    # 仅在有入款时显示入款相关统计
+    if deposit_count > 0:
+        bill += f"\n入款汇率：{format_exchange_rate(exchange_rate_deposit)}  |  费率：{int(deposit_fee_rate*100)}%\n"
+        bill += f"总入款：{int(total_deposit)}  |  {int(total_deposit_adjusted)}u\n"
+    # 仅在有出款时显示出款相关统计
     if withdraw_count > 0:
         bill += f"出款汇率：{format_exchange_rate(exchange_rate_withdraw)}  |  费率：{int(withdraw_fee_rate*100)}%\n"
-    if deposit_count > 0:
-        bill += f"总入款：{int(total_deposit)}  |  {int(total_deposit_adjusted)}u\n"
-    if withdraw_count > 0:
         bill += f"总出款：{int(total_withdraw)}  |  {int(total_withdraw_adjusted)}u\n"
     bill += f"总余额：{balance_str}u"
 
@@ -310,7 +314,7 @@ async def handle_message(update, context):
         if username and username in operators.get(chat_id, {}):
             print("匹配到 '删除账单' 指令")
             transactions[chat_id].clear()
-            await update.message.reply_text("本日账单已结算，重新开始记账")
+            await update.message.reply_text("账单已清空，重新记账开始")
     elif message_text == "日切" and username == initial_admin_username:
         if username in operators.get(chat_id, {}):
             print("匹配到 '日切' 指令")
