@@ -101,18 +101,26 @@ def setup_schedule():
 
 # 主函數
 def main():
-    # 使用 ApplicationBuilder 初始化
+    # 獲取 Render 環境變量 PORT
+    port = int(os.getenv("PORT", "10000"))
+
+    # 使用 ApplicationBuilder 初始化並設置 Webhook
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # 註冊訊息處理器（處理所有文本訊息）
+    # 註冊訊息處理器
     application.add_handler(MessageHandler(telegram.ext.filters.TEXT, handle_message))
 
     # 設置 schedule 任務
     setup_schedule()
 
-    # 啟動 Bot，綁定到 Render 預設端口
-    port = int(os.getenv("PORT", "10000"))
-    application.run_polling()
+    # 設置 Webhook（使用 Render 的公共 URL）
+    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_URL', 'your-render-url.onrender.com')}/webhook"
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=port,
+        url_path="/webhook",
+        webhook_url=webhook_url
+    )
 
 if __name__ == '__main__':
     main()
