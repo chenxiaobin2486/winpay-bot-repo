@@ -68,9 +68,9 @@ async def handle_bill(update, context):
     if withdraw_count > 0:
         bill += f"出款汇率：{format_exchange_rate(exchange_rate_withdraw)}  |  费率：{int(withdraw_fee_rate*100)}%\n"
     if deposit_count > 0:
-        bill += f"总入款：{int(total_deposit)}  |  {balance_str}u \n"
+        bill += f"总入款：{int(total_deposit)}  |  {int(total_deposit_adjusted)}u\n"
     if withdraw_count > 0:
-        bill += f"总出款：{int(total_withdraw)}  |  {int(total_withdraw_adjusted)}u \n"
+        bill += f"总出款：{int(total_withdraw)}  |  {int(total_withdraw_adjusted)}u\n"
     bill += f"总余额：{balance_str}u"
 
     await update.message.reply_text(bill if transactions else "无交易记录")
@@ -129,7 +129,7 @@ async def handle_message(update, context):
                     adjusted_amount = amount * (1 - deposit_fee_rate) / exchange_rate_deposit
                     amount_str = f"{int(amount)}" if amount.is_integer() else f"{amount:.2f}"
                     adjusted_str = f"{int(adjusted_amount)}" if adjusted_amount.is_integer() else f"{adjusted_amount:.2f}"
-                    transaction = f"入款 {amount_str} -> {adjusted_str} (由 {user_id})"
+                    transaction = f"入款 {amount_str} -> {adjusted_str}u (由 {user_id})"
                 transactions.append(transaction)
                 # 直接显示账单
                 await handle_bill(update, context)
@@ -153,7 +153,7 @@ async def handle_message(update, context):
                     adjusted_amount = amount * (1 + withdraw_fee_rate) / exchange_rate_withdraw
                     amount_str = f"{int(amount)}" if amount.is_integer() else f"{amount:.2f}"
                     adjusted_str = f"{int(adjusted_amount)}" if adjusted_amount.is_integer() else f"{adjusted_amount:.2f}"
-                    transaction = f"下发 {amount_str} -> {adjusted_str} (由 {user_id})"
+                    transaction = f"下发 {amount_str} -> {adjusted_str}u (由 {user_id})"
                     transactions.append(transaction)
                     # 直接显示账单
                     await handle_bill(update, context)
@@ -262,7 +262,7 @@ async def handle_message(update, context):
         if user_id in operators:
             print("匹配到 '删除账单' 指令")
             transactions.clear()
-            await update.message.reply_text("目前账单已结算，重新开始记账")
+            await update.message.reply_text("账单已清空，重新记账开始")
         else:
             await update.message.reply_text("仅限操作员使用此功能")
     elif message_text == "日切" and user_id == "8041296886":
