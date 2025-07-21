@@ -353,7 +353,7 @@ async def handle_message(update, context):
                                 t_amount_str = t_parts[1].rstrip('u')
                                 t_amount = float(t_amount_str)
                                 t_has_u = t_amount_str.endswith('u')
-                                if t_amount == amount and has_u == t_has_u:
+                                if abs(t_amount - amount) < 0.01 and has_u == t_has_u:  # 允许微小浮点误差
                                     transactions[chat_id].remove(t)
                                     await update.message.reply_text(f"入款 {format_amount(amount)}{'u' if has_u else ''} 已被撤销")
                                     return
@@ -368,7 +368,7 @@ async def handle_message(update, context):
                                 t_amount_str = t_parts[1].rstrip('u')
                                 t_amount = float(t_amount_str)
                                 t_has_u = t_amount_str.endswith('u')
-                                if t_amount == amount and has_u == t_has_u:
+                                if abs(t_amount - amount) < 0.01 and has_u == t_has_u:  # 允许微小浮点误差
                                     transactions[chat_id].remove(t)
                                     await update.message.reply_text(f"下发 {format_amount(amount)}{'u' if has_u else ''} 已被撤销")
                                     return
