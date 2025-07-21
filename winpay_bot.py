@@ -347,30 +347,32 @@ async def handle_message(update, context):
                     if amount_match:
                         amount = float(amount_match.group(1))
                         has_u = 'u' in original_message.lower()
-                        for t in transactions[chat_id][:]:
+                        for i, t in enumerate(transactions[chat_id][:]):
                             if t.startswith("入款"):
                                 t_parts = t.split(" -> ")[0].split()
                                 t_amount_str = t_parts[1].rstrip('u')
                                 t_amount = float(t_amount_str)
                                 t_has_u = t_amount_str.endswith('u')
-                                if abs(t_amount - amount) < 0.01 and has_u == t_has_u:  # 允许微小浮点误差
-                                    transactions[chat_id].remove(t)
+                                if abs(t_amount - amount) < 0.01 and has_u == t_has_u:
+                                    del transactions[chat_id][i]
                                     await update.message.reply_text(f"入款 {format_amount(amount)}{'u' if has_u else ''} 已被撤销")
+                                    await handle_bill(update, context)  # 更新账单显示
                                     return
                 elif original_message.startswith("下发"):
                     amount_match = re.search(r'下发\s*(\d+\.?\d*)[uU]?', original_message)
                     if amount_match:
                         amount = float(amount_match.group(1))
                         has_u = 'u' in original_message.lower().split()[1] if len(original_message.split()) > 1 else False
-                        for t in transactions[chat_id][:]:
+                        for i, t in enumerate(transactions[chat_id][:]):
                             if t.startswith("下发"):
                                 t_parts = t.split(" -> ")[0].split()
                                 t_amount_str = t_parts[1].rstrip('u')
                                 t_amount = float(t_amount_str)
                                 t_has_u = t_amount_str.endswith('u')
-                                if abs(t_amount - amount) < 0.01 and has_u == t_has_u:  # 允许微小浮点误差
-                                    transactions[chat_id].remove(t)
+                                if abs(t_amount - amount) < 0.01 and has_u == t_has_u:
+                                    del transactions[chat_id][i]
                                     await update.message.reply_text(f"下发 {format_amount(amount)}{'u' if has_u else ''} 已被撤销")
+                                    await handle_bill(update, context)  # 更新账单显示
                                     return
                 await update.message.reply_text("无法撤销此消息，请确保回复正确的入款或下发记录")
             else:
