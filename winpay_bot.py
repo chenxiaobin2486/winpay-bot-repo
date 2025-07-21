@@ -6,11 +6,16 @@ import time
 import re
 import os
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import pytz
 import requests
 import random
 import string
+import logging
+
+# 设置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # 定义 Bot Token（从环境变量获取）
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7908773608:AAFFqLmGkJ9zbsuymQTFzJxy5IyeN1E9M-U")
@@ -61,7 +66,7 @@ async def handle_bill(update, context):
                 amount = float(parts[0].split()[1].rstrip('u'))
                 bill += f"{timestamp}  {format_amount(amount)}u ({operator})\n"
             else:
-                amount = float(parts[0].split()[1])
+                amount = float(parts[0].split()[1].rstrip('.0').rstrip('.00'))
                 adjusted = float(parts[1].split()[0].rstrip('u'))
                 effective_rate = 1 - deposit_fee_rate
                 bill += f"{timestamp}  {format_amount(amount)}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_deposit)}={format_amount(adjusted)}u ({operator})\n"
@@ -79,7 +84,7 @@ async def handle_bill(update, context):
                 amount = float(parts[0].split()[1].rstrip('u'))
                 bill += f"{timestamp}  {format_amount(amount)}u ({operator})\n"
             else:
-                amount = float(parts[0].split()[1])
+                amount = float(parts[0].split()[1].rstrip('.0').rstrip('.00'))
                 adjusted = float(parts[1].split()[0].rstrip('u'))
                 effective_rate = 1 + withdraw_fee_rate
                 bill += f"{timestamp}  {format_amount(amount)}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_withdraw)}={format_amount(adjusted)}u ({operator})\n"
@@ -148,8 +153,8 @@ async def handle_message(update, context):
     username = update.message.from_user.username
     first_name = update.message.from_user.first_name.strip() if update.message.from_user.first_name else None
     operator_name = first_name or "未知用户"
-    print(f"收到消息: '{message_text}' 从用户 {user_id}, username: {username}, chat_id: {chat_id}")
-    print(f"当前操作员列表: {operators.get(chat_id, {})}")
+    logger.info(f"收到消息: '{message_text}' 从用户 {user_id}, username: {username}, chat_id: {chat_id}")
+    logger.info(f"当前操作员列表: {operators.get(chat_id, {})}")
 
     # 记账部分初始化
     if chat_id not in operators:
@@ -165,7 +170,7 @@ async def handle_message(update, context):
     if chat_id not in last_file_id:
         last_file_id[chat_id] = None
 
-    # 更新或记录用户历史（保持不变）
+    # 更新或记录用户历史
     if user_id not in user_history[chat_id]:
         user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
     else:
@@ -176,22 +181,22 @@ async def handle_message(update, context):
             await update.message.reply_text(
                 f"⚠️警告⚠️{first_name} 用户名不一致\n之前用户名@{old_username}\n现在用户名@{username}\n请注意查证‼️"
             )
-            print(f"用户名变更警告: {first_name}, 之前 @{old_username}, 现在 @{username}")
+            logger.warning(f"用户名变更警告: {first_name}, 之前 @{old_username}, 现在 @{username}")
         elif first_name and first_name != old_first_name and username == old_username:
             await update.message.reply_text(
                 f"⚠️警告⚠️@{username} 昵称不一致\n之前昵称{old_first_name}\n现在昵称{first_name}\n请注意查证‼️"
             )
-            print(f"昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
+            logger.warning(f"昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
         user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
 
     # 记账功能（保持不变）
     if message_text == "开始":
         if username and username in operators.get(chat_id, {}):
-            print("匹配到 '开始' 指令")
+            logger.info("匹配到 '开始' 指令")
             await update.message.reply_text("欢迎使用winpay小秘书")
     elif message_text == "说明":
         if username and username in operators.get(chat_id, {}):
-            print("匹配到 '说明' 指令")
+            logger.info("匹配到 '说明' 指令")
             help_text = """
 可用指令：
 开始使用：开始
@@ -211,7 +216,7 @@ async def handle_message(update, context):
             await update.message.reply_text(help_text)
     elif (message_text.startswith("入款") or message_text.startswith("+")) and message_text != "+0":
         if username and username in operators.get(chat_id, {}):
-            print(f"匹配到 '入款' 或 '+' 指令，金额: {message_text.replace('入款', '').replace('+', '').strip()}")
+            logger.info(f"匹配到 '入款' 或 '+' 指令，金额: {message_text.replace('入款', '').replace('+', '').strip()}")
             try:
                 amount_str = message_text.replace("入款", "").replace("+", "").strip()
                 beijing_tz = pytz.timezone("Asia/Shanghai")
@@ -234,7 +239,7 @@ async def handle_message(update, context):
                 await update.message.reply_text("请输入正确金额，例如：入款1000 或 +1000 或 +100u")
     elif message_text.startswith("下发"):
         if username and username in operators.get(chat_id, {}):
-            print(f"匹配到 '下发' 指令，金额: {message_text.replace('下发', '').strip()}")
+            logger.info(f"匹配到 '下发' 指令，金额: {message_text.replace('下发', '').strip()}")
             try:
                 amount_str = message_text.replace("下发", "").strip()
                 beijing_tz = pytz.timezone("Asia/Shanghai")
@@ -257,7 +262,7 @@ async def handle_message(update, context):
                 await update.message.reply_text("请输入正确金额，例如：下发500 或 下发50u")
     elif message_text.startswith("设置操作员"):
         if username and username in operators.get(chat_id, {}):
-            print(f"匹配到 '设置操作员' 指令，参数: {message_text.replace('设置操作员', '').strip()}")
+            logger.info(f"匹配到 '设置操作员' 指令，参数: {message_text.replace('设置操作员', '').strip()}")
             operator = message_text.replace("设置操作员", "").strip()
             if operator.startswith("@"):
                 operator = operator[1:]  # 移除 @ 符号
@@ -269,7 +274,7 @@ async def handle_message(update, context):
                 await update.message.reply_text("请使用格式：设置操作员 @用户名")
     elif message_text.startswith("删除操作员"):
         if username and username in operators.get(chat_id, {}):
-            print(f"匹配到 '删除操作员' 指令，参数: {message_text.replace('删除操作员', '').strip()}")
+            logger.info(f"匹配到 '删除操作员' 指令，参数: {message_text.replace('删除操作员', '').strip()}")
             operator = message_text.replace("删除操作员", "").strip()
             if operator.startswith("@"):
                 operator = operator[1:]  # 移除 @ 符号
@@ -282,7 +287,7 @@ async def handle_message(update, context):
                 await update.message.reply_text("请使用格式：删除操作员 @用户名")
     elif message_text.startswith("设置入款汇率"):
         if username and username in operators.get(chat_id, {}):
-            print(f"匹配到 '设置入款汇率' 指令，汇率: {message_text.replace('设置入款汇率', '').strip()}")
+            logger.info(f"匹配到 '设置入款汇率' 指令，汇率: {message_text.replace('设置入款汇率', '').strip()}")
             try:
                 rate = float(message_text.replace("设置入款汇率", "").strip())
                 exchange_rate_deposit = round(rate, 3)
@@ -291,7 +296,7 @@ async def handle_message(update, context):
                 await update.message.reply_text("请输入正确汇率，例如：设置入款汇率0.98")
     elif message_text.startswith("设置入款费率"):
         if username and username in operators.get(chat_id, {}):
-            print(f"匹配到 '设置入款费率' 指令，费率: {message_text.replace('设置入款费率', '').strip()}")
+            logger.info(f"匹配到 '设置入款费率' 指令，费率: {message_text.replace('设置入款费率', '').strip()}")
             try:
                 rate = float(message_text.replace("设置入款费率", "").strip()) / 100
                 deposit_fee_rate = rate
@@ -300,7 +305,7 @@ async def handle_message(update, context):
                 await update.message.reply_text("请输入正确费率，例如：设置入款费率8")
     elif message_text.startswith("设置下发汇率"):
         if username and username in operators.get(chat_id, {}):
-            print(f"匹配到 '设置下发汇率' 指令，汇率: {message_text.replace('设置下发汇率', '').strip()}")
+            logger.info(f"匹配到 '设置下发汇率' 指令，汇率: {message_text.replace('设置下发汇率', '').strip()}")
             try:
                 rate = float(message_text.replace("设置下发汇率", "").strip())
                 exchange_rate_withdraw = round(rate, 3)
@@ -309,7 +314,7 @@ async def handle_message(update, context):
                 await update.message.reply_text("请输入正确汇率，例如：设置下发汇率1.25")
     elif message_text.startswith("设置下发费率"):
         if username and username in operators.get(chat_id, {}):
-            print(f"匹配到 '设置下发费率' 指令，费率: {message_text.replace('设置下发费率', '').strip()}")
+            logger.info(f"匹配到 '设置下发费率' 指令，费率: {message_text.replace('设置下发费率', '').strip()}")
             try:
                 rate = float(message_text.replace("设置下发费率", "").strip()) / 100
                 withdraw_fee_rate = rate
@@ -318,14 +323,14 @@ async def handle_message(update, context):
                 await update.message.reply_text("请输入正确费率，例如：设置下发费率8")
     elif message_text == "账单" or message_text == "+0":
         if username and username in operators.get(chat_id, {}):
-            print("匹配到 '账单' 或 '+0' 指令")
+            logger.info("匹配到 '账单' 或 '+0' 指令")
             await handle_bill(update, context)
     elif message_text == "删除":
         if username and username in operators.get(chat_id, {}):
-            print("匹配到 '删除' 指令")
+            logger.info("匹配到 '删除' 指令")
             if update.message.reply_to_message:
                 original_message = update.message.reply_to_message.text.strip()
-                print(f"尝试删除，原始消息: '{original_message}'")
+                logger.info(f"尝试删除，原始消息: '{original_message}'")
                 if original_message.startswith("+") and not original_message == "+0":
                     amount_str = original_message.replace("+", "").strip()
                     amount = float(amount_str.rstrip('uU'))
@@ -357,21 +362,21 @@ async def handle_message(update, context):
                 await update.message.reply_text("请回复目标交易相关消息以删除")
     elif message_text == "删除账单":
         if username and username in operators.get(chat_id, {}):
-            print("匹配到 '删除账单' 指令")
+            logger.info("匹配到 '删除账单' 指令")
             transactions[chat_id].clear()
             await update.message.reply_text("今日已清账💰，重新开始记账")
     elif message_text == "日切" and username == initial_admin_username:
         if username in operators.get(chat_id, {}):
-            print("匹配到 '日切' 指令")
+            logger.info("匹配到 '日切' 指令")
             transactions[chat_id].clear()
             await update.message.reply_text("交易记录已清空")
     elif message_text == "操作员列表":
         if username and username in operators.get(chat_id, {}):
-            print("匹配到 '操作员列表' 指令")
+            logger.info("匹配到 '操作员列表' 指令")
             op_list = ", ".join([f"@{op}" for op in operators.get(chat_id, {})])
             await update.message.reply_text(f"当前操作员列表: {op_list}" if op_list else "当前无操作员")
     elif re.match(r'^[T][a-km-zA-HJ-NP-Z1-9]{33}$', message_text):
-        print("匹配到 TRX 地址验证")
+        logger.info("匹配到 TRX 地址验证")
         chat_id = str(update.message.chat_id)
         current_user = f"@{username}" if username else "未知用户"
         address_verify_count[chat_id]["count"] += 1
@@ -395,17 +400,22 @@ async def handle_message(update, context):
             await update.message.reply_text(f"文件 ID: {file_id}")
 
         # 自动解析邀请链接
-        if re.match(r'https?://t\.me/.*', message_text):
+        if re.match(r'https?://t\.me/\+\w+', message_text):
+            logger.info(f"Attempting to parse invite link: {message_text}")
             try:
                 response = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getChat?chat_id={message_text}")
                 data = response.json()
+                logger.info(f"API response: {data}")
                 if data.get("ok"):
                     chat_id = str(data["result"]["id"])
                     await update.message.reply_text(f"群 ID: {chat_id}")
                 else:
-                    await update.message.reply_text("链接无效请检查")
-            except Exception as e:
-                await update.message.reply_text("链接无效请检查")
+                    error_desc = data.get("description", "Unknown error")
+                    logger.error(f"API error: {error_desc}")
+                    await update.message.reply_text(f"链接无效请检查: {error_desc}. 请确保机器人已加入群组。")
+            except requests.RequestException as e:
+                logger.error(f"Request failed: {e}")
+                await update.message.reply_text("链接无效请检查: 网络错误或API调用失败")
 
         # 显示群发说明
         if message_text == "群发说明":
@@ -418,7 +428,7 @@ async def handle_message(update, context):
    - 方法：  
      1. 打开 Telegram 应用，进入目标群聊。  
      2. 点击群聊名称进入群组信息页面。  
-     3. 点击“添加成员”或“邀请链接”（需要管理员权限），复制邀请链接（例如 `https://t.me/MyGroup` 或 `https://t.me/joinchat/AAAAA...`）。  
+     3. 点击“添加成员”或“邀请链接”（需要管理员权限），复制邀请链接（例如 `https://t.me/+nW4I6Y81dec5MWE1`）。  
      4. 在私聊中直接发送该链接给机器人。  
    - 功能：机器人自动解析链接，成功时回复“群 ID: -1001234567890”，失败时回复“链接无效请检查”。  
    - 注意：确保链接有效，机器人需有权限访问该群。
@@ -435,7 +445,7 @@ async def handle_message(update, context):
 3. **创建群发任务**  
    - 指令：`任务 队名 时间 模板名`  
    - 功能：为指定编队（队名）设置群发任务，使用指定模板的广告文和文件 ID，时间格式为 `HH:MM`（24小时制）。  
-   - 示例：`任务 广告队 15:00 模板1`  
+   - 示例：`任务 广告队 16:00 模板1`  
    - 结果：机器人生成唯一任务 ID（例如 `12345`），回复“任务已创建，任务 ID: 12345，请回复 `确认 12345` 执行”。  
    - 时间处理：以服务器时间（+07）为准，若时间已过当天自动调整为次日。
 
@@ -500,7 +510,7 @@ async def handle_message(update, context):
                     scheduled_tasks[task_id] = {"team": team_name, "template": template_name, "time": scheduled_time}
                     await update.message.reply_text(f"任务已创建，任务 ID: {task_id}，请回复 `确认 {task_id}` 执行")
                 except (ValueError, IndexError):
-                    await update.message.reply_text("时间格式错误，请使用 HH:MM，例如 15:00")
+                    await update.message.reply_text("时间格式错误，请使用 HH:MM，例如 16:00")
 
         # 确认任务
         if message_text.startswith("确认 "):
@@ -577,14 +587,14 @@ async def send_broadcast(context, task):
                     await context.bot.send_animation(chat_id=group_id, animation=template["file_id"], caption=template["message"])
                 else:
                     await context.bot.send_message(chat_id=group_id, text=template["message"])
-                print(f"已发送至群组 {group_id}")
+                logger.info(f"已发送至群组 {group_id}")
             except Exception as e:
-                print(f"发送至群组 {group_id} 失败: {e}")
+                logger.error(f"发送至群组 {group_id} 失败: {e}")
 
 # 主函数（保持不变）
 def main():
     port = int(os.getenv("PORT", "10000"))
-    print(f"Listening on port: {port}")
+    logger.info(f"Listening on port: {port}")
 
     application = Application.builder().token(BOT_TOKEN).build()
 
@@ -595,15 +605,15 @@ def main():
 
     external_url = os.getenv("RENDER_EXTERNAL_URL", "winpay-bot-repo.onrender.com").strip()
     if not external_url:
-        print("错误：RENDER_EXTERNAL_URL 未设置")
+        logger.error("错误：RENDER_EXTERNAL_URL 未设置")
         return
     if not external_url.startswith("http"):
         webhook_url = f"https://{external_url}/webhook"
     else:
         webhook_url = external_url + "/webhook"
-    print(f"设置 Webhook URL: {webhook_url}")
+    logger.info(f"设置 Webhook URL: {webhook_url}")
     try:
-        print("尝试启动 Webhook...")
+        logger.info("尝试启动 Webhook...")
         application.run_webhook(
             listen="0.0.0.0",
             port=port,
@@ -611,7 +621,7 @@ def main():
             webhook_url=webhook_url
         )
     except Exception as e:
-        print(f"Webhook 设置失败: {e}")
+        logger.error(f"Webhook 设置失败: {e}")
 
 if __name__ == '__main__':
     main()
