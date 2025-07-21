@@ -166,7 +166,7 @@ async def handle_message(update, context):
     first_name = update.message.from_user.first_name.strip() if update.message.from_user.first_name else None
     operator_name = first_name or "未知用户"
     print(f"收到消息: '{message_text}' 从用户 {user_id}, username: {username}, chat_id: {chat_id}")
-    print(f"消息详情: animation={bool(update.message.animation)}, document={bool(update.message.document)}, photo={bool(update.message.photo)}")
+    print(f"消息详情: animation={bool(update.message.animation)}, document={bool(update.message.document)}, photo={bool(update.message.photo)}, video={bool(update.message.video)}")
     print(f"当前操作员列表: {operators.get(chat_id, {})}")
 
     if chat_id not in operators:
@@ -215,6 +215,9 @@ async def handle_message(update, context):
         elif update.message.document:
             file_id = update.message.document.file_id
             file_type = "视频"
+        elif update.message.video:
+            file_id = update.message.video.file_id
+            file_type = "视频"
         elif update.message.photo and len(update.message.photo) > 0:
             file_id = update.message.photo[-1].file_id
             file_type = "图片"
@@ -228,6 +231,9 @@ async def handle_message(update, context):
             except Exception as e:
                 print(f"回复文件ID失败: {e}")
                 await update.message.reply_text("无法回复文件ID，请稍后重试")
+        elif update.message.video or update.message.document or update.message.animation or update.message.photo:
+            print(f"文件处理失败，未识别到有效文件ID，消息详情: animation={bool(update.message.animation)}, document={bool(update.message.document)}, photo={bool(update.message.photo)}, video={bool(update.message.video)}")
+            await update.message.reply_text("无法识别文件，请确保发送的是动图、视频或图片文件")
 
     # 编队列表指令
     if message_text == "编队列表" and update.message.chat.type == "private":
@@ -606,7 +612,7 @@ async def handle_message(update, context):
                 await update.message.reply_text("使用格式：删除 队名 群ID,群ID")
             return
 
-        # 其余群发逻辑
+        # 群发任务逻辑
         if message_text.startswith("编辑 "):
             parts = message_text.split(" ", 2)
             if len(parts) == 3 and parts[1] and parts[2]:
@@ -630,12 +636,18 @@ async def handle_message(update, context):
                 if username and (username in operators.get(chat_id, {}) or username == initial_admin_username):
                     if update.message.reply_to_message:
                         reply_message = update.message.reply_to_message
-                        if reply_message.from_user.is_bot and "文件 ID:" in reply_message.text:
+                        if reply_message.from_user.is_bot and "文件 ID:" in (reply_message.text or ""):
                             original_message = reply_message.reply_to_message
-                            if original_message and (original_message.document or original_message.photo or original_message.animation):
+                            if not original_message:
+                                print(f"任务失败：未找到原始文件消息，回复消息内容: {reply_message.text}")
+                                await update.message.reply_text("请直接回复机器人返回的‘动图文件 ID’、‘视频文件 ID’或‘图片文件 ID’消息")
+                                return
+                            if original_message and (original_message.document or original_message.photo or original_message.animation or original_message.video):
+                                print(f"任务回复处理：回复消息={reply_message.text}, 原始消息文件类型: animation={bool(original_message.animation)}, document={bool(original_message.document)}, photo={bool(original_message.photo)}, video={bool(original_message.video)}")
                                 file_id = (original_message.document.file_id if original_message.document 
                                           else original_message.photo[-1].file_id if original_message.photo 
-                                          else original_message.animation.file_id)
+                                          else original_message.animation.file_id if original_message.animation
+                                          else original_message.video.file_id)
                                 caption = original_message.caption or ""
                                 team_name, time_str = parts[1], parts[2]
                                 if team_name in team_groups:
@@ -654,9 +666,11 @@ async def handle_message(update, context):
                                 else:
                                     await update.message.reply_text("任务目标有误，请检查队名")
                             else:
+                                print(f"任务失败：原始消息无有效文件，回复消息内容: {reply_message.text}")
                                 await update.message.reply_text("请回复包含动图、视频或图片的文件 ID 消息")
                         else:
-                            await update.message.reply_text("请回复机器人返回的‘文件 ID’消息")
+                            print(f"任务失败：回复消息非机器人‘文件 ID’消息，内容: {reply_message.text}")
+                            await update.message.reply_text("请直接回复机器人返回的‘动图文件 ID’、‘视频文件 ID’或‘图片文件 ID’消息")
                     else:
                         await update.message.reply_text("请回复包含动图、视频或图片的文件 ID 消息")
                 else:
@@ -720,7 +734,7 @@ def main():
     application = Application.builder().token(BOT_TOKEN).build()
 
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
-    application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL | filters.ANIMATION, handle_message))
+    application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL | filters.ANIMATION | filters.VIDEO, handle_message))
 
     setup_schedule()
 
