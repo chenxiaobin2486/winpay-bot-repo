@@ -468,7 +468,7 @@ async def handle_text(update, context):
 
     elif message_text == "日切" and username == initial_admin_username:
         if username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
-            logger.info(f"匹配到 '日切' 指令, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_id})")
+            logger.info(f"匹配到 '日切' 指令, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
             transactions[chat_id].clear()
             await update.message.reply_text("交易记录已清空")
 
@@ -661,13 +661,7 @@ async def main():
 
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # 检查 Webhook 状态
-    try:
-        webhook_info = await application.bot.get_webhook_info()
-        logger.info(f"当前 Webhook 状态: {webhook_info}")
-    except Exception as e:
-        logger.error(f"获取 Webhook 状态失败: {e}")
-
+    # 添加消息处理程序
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
     application.add_handler(MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, handle_photo))
     application.add_handler(MessageHandler(filters.ANIMATION & filters.ChatType.PRIVATE, handle_animation))
@@ -684,25 +678,49 @@ async def main():
 
     setup_schedule()
 
-    external_url = os.getenv("RENDER_EXTERNAL_URL", "winpay-bot-repo.onrender.com").strip()
-    if not external_url:
-        logger.error("错误：RENDER_EXTERNAL_URL 未设置")
-        return
-    if not external_url.startswith("http"):
-        webhook_url = f"https://{external_url}/webhook"
-    else:
-        webhook_url = external_url + "/webhook"
-    logger.info(f"设置 Webhook URL: {webhook_url}")
+    # 检查 Webhook 状态
     try:
-        logger.info("尝试启动 Webhook...")
-        await application.run_webhook(
-            listen="0.0.0.0",
-            port=port,
-            url_path="/webhook",
-            webhook_url=webhook_url
-        )
+        webhook_info = await application.bot.get_webhook_info()
+        logger.info(f"当前 Webhook 状态: {webhook_info}")
     except Exception as e:
-        logger.error(f"Webhook 设置失败: {e}")
+        logger.error(f"获取 Webhook 状态失败: {e}")
+
+    # 尝试使用 Webhook 模式
+    external_url = os.getenv("RENDER_EXTERNAL_URL", "winpay-bot-repo.onrender.com").strip()
+    use_webhook = os.getenv("USE_WEBHOOK", "true").lower() == "true"
+
+    if use_webhook and external_url:
+        if not external_url.startswith("http"):
+            webhook_url = f"https://{external_url}/webhook"
+        else:
+            webhook_url = external_url + "/webhook"
+        logger.info(f"设置 Webhook URL: {webhook_url}")
+        try:
+            await application.bot.set_webhook(url=webhook_url)
+            await application.run_webhook(
+                listen="0.0.0.0",
+                port=port,
+                url_path="/webhook",
+                webhook_url=webhook_url,
+                drop_pending_updates=True
+            )
+            logger.info("Webhook 启动成功")
+        except Exception as e:
+            logger.error(f"Webhook 设置失败: {e}, 切换到轮询模式")
+            use_webhook = False
+
+    # 后备到轮询模式
+    if not use_webhook:
+        logger.info("启动轮询模式")
+        await application.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except RuntimeError as e:
+        logger.error(f"主程序运行失败: {e}")
+        # 手动创建新的事件循环以避免嵌套问题
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(main())
+        loop.run_forever()
