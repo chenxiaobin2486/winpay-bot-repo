@@ -318,6 +318,7 @@ async def handle_message(update, context):
                             if t_amount == amount and has_u == t_has_u:
                                 transactions[chat_id].remove(t)
                                 await update.message.reply_text(f"入款 {format_amount(amount)}{'u' if has_u else ''} 已被撤销")
+                                await handle_bill(update, context)  # 自动显示账单
                                 return
                 elif original_message.startswith("下发"):
                     amount_str = original_message.replace("下发", "").strip()
@@ -330,6 +331,7 @@ async def handle_message(update, context):
                             if t_amount == amount and has_u == t_has_u:
                                 transactions[chat_id].remove(t)
                                 await update.message.reply_text(f"下发 {format_amount(amount)}{'u' if has_u else ''} 已被撤销")
+                                await handle_bill(update, context)  # 自动显示账单
                                 return
                 await update.message.reply_text("无法撤销此消息，请确保回复正确的入款或下发记录")
             else:
