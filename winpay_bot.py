@@ -602,22 +602,26 @@ async def initialize_joined_chats(context):
     except requests.RequestException as e:
         logger.error(f"初始化群列表失败: {e}")
 
-# 主函数（修正 Webhook 启动）
+# 主函数（修正事件循环管理）
 async def main():
     port = int(os.getenv("PORT", "10000"))
     logger.info(f"Listening on port: {port}")
 
+    # 创建 Application 实例
     application = Application.builder().token(BOT_TOKEN).build()
 
     # 初始化已加入群的列表
     await initialize_joined_chats(application)
 
+    # 添加处理程序
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
     application.add_handler(MessageHandler(telegram.ext.filters.TEXT, handle_message))
     application.add_handler(ChatMemberHandler(handle_chat_member))
 
+    # 设置定时任务
     setup_schedule()
 
+    # 配置 Webhook URL
     external_url = os.getenv("RENDER_EXTERNAL_URL", "winpay-bot-repo.onrender.com").strip()
     if not external_url:
         logger.error("错误：RENDER_EXTERNAL_URL 未设置")
@@ -627,8 +631,11 @@ async def main():
     else:
         webhook_url = external_url + "/webhook"
     logger.info(f"设置 Webhook URL: {webhook_url}")
+
     try:
         logger.info("尝试启动 Webhook...")
+        # 使用现有事件循环运行 Webhook
+        loop = asyncio.get_event_loop()
         await application.run_webhook(
             listen="0.0.0.0",
             port=port,
@@ -637,6 +644,9 @@ async def main():
         )
     except Exception as e:
         logger.error(f"Webhook 设置失败: {e}")
+    finally:
+        # 确保关闭 Application
+        await application.shutdown()
 
 # 运行主函数
 if __name__ == '__main__':
