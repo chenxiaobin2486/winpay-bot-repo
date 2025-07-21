@@ -147,7 +147,7 @@ async def handle_message(update, context):
     user_id = str(update.message.from_user.id)
     username = update.message.from_user.username
     first_name = update.message.from_user.first_name.strip() if update.message.from_user.first_name else None
-    operator_name = first_name or "未知用户"
+    operator_name = username if username else (first_name or "未知用户")
     logger.info(f"收到消息: '{message_text}' 从用户 {user_id}, username: {username}, chat_id: {chat_id}")
     logger.info(f"当前操作员列表: {operators.get(chat_id, {})}")
 
@@ -188,11 +188,10 @@ async def handle_message(update, context):
 
     # 记账功能
     if message_text == "开始":
-        if username and username in operators.get(chat_id, {}):
-            logger.info("匹配到 '开始' 指令")
-            transactions[chat_id].clear()  # 清空当前账单
-            is_accounting_enabled[chat_id] = True  # 恢复记账功能
-            await update.message.reply_text("欢迎使用winpay小秘书，全天候为你服务")
+        logger.info("匹配到 '开始' 指令")
+        transactions[chat_id].clear()  # 清空当前账单
+        is_accounting_enabled[chat_id] = True  # 恢复记账功能
+        await update.message.reply_text("欢迎使用winpay小秘书，全天候为你服务")
 
     elif message_text == "停止记账":
         if username and username in operators.get(chat_id, {}):
@@ -234,13 +233,14 @@ async def handle_message(update, context):
             logger.info(f"匹配到 '入款' 或 '+' 指令，原始消息: {message_text}")
             try:
                 # 优化正则表达式以正确提取金额
-                amount_match = re.search(r'^\+?\s*(\d+(\.\d+)?[uU]?)|\b(入款|下发)\s+(\d+(\.\d+)?[uU]?)', message_text, re.IGNORECASE)
+                amount_match = re.search(r'^\+?\s*(\d+(\.\d+)?[uU]?)', message_text, re.IGNORECASE) if message_text.startswith("+") else re.search(r'\b(入款|下发)\s+(\d+(\.\d+)?[uU]?)', message_text, re.IGNORECASE)
                 if not amount_match:
                     raise ValueError("无效金额格式")
-                amount_str = amount_match.group(1) if amount_match.group(1) else amount_match.group(4)
+                amount_str = amount_match.group(1) if message_text.startswith("+") else amount_match.group(2)
                 if not amount_str:
                     raise ValueError("未找到有效金额")
                 amount_str = amount_str.strip()
+                logger.info(f"提取金额字符串: {amount_str}")
                 beijing_tz = pytz.timezone("Asia/Shanghai")
                 utc_time = update.message.date.replace(tzinfo=timezone.utc)
                 timestamp = utc_time.astimezone(beijing_tz).strftime("%H:%M")
@@ -251,6 +251,7 @@ async def handle_message(update, context):
                     amount = float(amount_str)
                     adjusted_amount = amount * (1 - deposit_fee_rate) / exchange_rate_deposit
                     transaction = f"入款 {format_amount(amount)} {timestamp} -> {format_amount(adjusted_amount)}u ({operator_name})"
+                logger.info(f"交易记录: {transaction}")
                 transactions[chat_id].append(transaction)
                 await handle_bill(update, context)
             except ValueError as e:
@@ -264,13 +265,14 @@ async def handle_message(update, context):
             logger.info(f"匹配到 '下发' 指令，原始消息: {message_text}")
             try:
                 # 优化正则表达式以正确提取金额
-                amount_match = re.search(r'^\+?\s*(\d+(\.\d+)?[uU]?)|\b(入款|下发)\s+(\d+(\.\d+)?[uU]?)', message_text, re.IGNORECASE)
+                amount_match = re.search(r'\b(入款|下发)\s+(\d+(\.\d+)?[uU]?)', message_text, re.IGNORECASE)
                 if not amount_match:
                     raise ValueError("无效金额格式")
-                amount_str = amount_match.group(1) if amount_match.group(1) else amount_match.group(4)
+                amount_str = amount_match.group(2)
                 if not amount_str:
                     raise ValueError("未找到有效金额")
                 amount_str = amount_str.strip()
+                logger.info(f"提取金额字符串: {amount_str}")
                 beijing_tz = pytz.timezone("Asia/Shanghai")
                 utc_time = update.message.date.replace(tzinfo=timezone.utc)
                 timestamp = utc_time.astimezone(beijing_tz).strftime("%H:%M")
@@ -281,6 +283,7 @@ async def handle_message(update, context):
                     amount = float(amount_str)
                     adjusted_amount = amount * (1 + withdraw_fee_rate) / exchange_rate_withdraw
                     transaction = f"下发 {format_amount(amount)} {timestamp} -> {format_amount(adjusted_amount)}u ({operator_name})"
+                logger.info(f"交易记录: {transaction}")
                 transactions[chat_id].append(transaction)
                 await handle_bill(update, context)
             except ValueError as e:
