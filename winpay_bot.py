@@ -145,7 +145,7 @@ async def handle_chat_member(update: telegram.Update, context: telegram.ext.Cont
         joined_chats.add(chat_id)
         logger.info(f"机器人加入新群: {chat_id}")
 
-# 处理所有消息（更新“开始”、“停止记账”、“恢复记账”）
+# 处理所有消息（保持不变）
 async def handle_message(update, context):
     global exchange_rate_deposit, deposit_fee_rate, exchange_rate_withdraw, withdraw_fee_rate, operators, transactions, user_history, address_verify_count
     global is_accounting_enabled, team_groups, scheduled_tasks, last_file_id, templates
@@ -602,15 +602,15 @@ async def initialize_joined_chats(context):
     except requests.RequestException as e:
         logger.error(f"初始化群列表失败: {e}")
 
-# 主函数（保持不变）
-def main():
+# 主函数（修正 Webhook 启动）
+async def main():
     port = int(os.getenv("PORT", "10000"))
     logger.info(f"Listening on port: {port}")
 
     application = Application.builder().token(BOT_TOKEN).build()
 
     # 初始化已加入群的列表
-    asyncio.run(initialize_joined_chats(application))
+    await initialize_joined_chats(application)
 
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
     application.add_handler(MessageHandler(telegram.ext.filters.TEXT, handle_message))
@@ -629,7 +629,7 @@ def main():
     logger.info(f"设置 Webhook URL: {webhook_url}")
     try:
         logger.info("尝试启动 Webhook...")
-        application.run_webhook(
+        await application.run_webhook(
             listen="0.0.0.0",
             port=port,
             url_path="/webhook",
@@ -638,5 +638,6 @@ def main():
     except Exception as e:
         logger.error(f"Webhook 设置失败: {e}")
 
+# 运行主函数
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())
