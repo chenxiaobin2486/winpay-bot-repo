@@ -35,7 +35,7 @@ def setup_schedule():
 
 # 定义日志功能
 async def job():
-    print("执行日志任务", time.ctime())
+    print(f"执行日志任务 {time.ctime()}")
 
 # 账单处理函数
 async def handle_bill(update, context):
@@ -124,15 +124,17 @@ def format_exchange_rate(rate):
 # 欢迎新成员
 async def welcome_new_member(update, context):
     chat_id = str(update.message.chat_id)
+    chat_title = update.message.chat.title or "未知群组"
     if chat_id not in user_history:
         user_history[chat_id] = {}
     if update.message and update.message.new_chat_members:
         for member in update.message.new_chat_members:
             user_id = str(member.id)
-            username = member.username
+            username = member.username or "未知用户"
             first_name = member.first_name.strip() if member.first_name else None
             user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
             nickname = first_name or username or "新朋友"
+            print(f"新人加入群组 '{chat_title}' (ID: {chat_id}), 用户: @{username}, 昵称: {nickname}")
             await update.message.reply_text(f"欢迎 {nickname} 来到本群")
 
 # 群发执行函数
@@ -147,14 +149,18 @@ async def send_broadcast(context, task):
                     await context.bot.send_animation(chat_id=group_id, animation=template["file_id"], caption=template["message"])
                 else:
                     await context.bot.send_message(chat_id=group_id, text=template["message"])
-                print(f"已发送至群组 {group_id}")
+                print(f"已发送群发至群组 ID: {group_id}")
             except Exception as e:
-                print(f"发送至群组 {group_id} 失败: {e}")
+                print(f"发送群发至群组 ID: {group_id} 失败: {e}")
 
 # 处理图片消息
 async def handle_photo(update, context):
     chat_id = str(update.message.chat_id)
-    if update.message.chat.type == "private":
+    chat_type = update.message.chat.type
+    chat_title = update.message.chat.title or "私聊"
+    username = update.message.from_user.username or "未知用户"
+    print(f"收到图片消息 从{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id}), 用户: @{username}")
+    if chat_type == "private":
         file_id = update.message.photo[-1].file_id
         last_file_id[chat_id] = file_id
         await update.message.reply_text(f"图片文件 ID: {file_id}")
@@ -162,7 +168,11 @@ async def handle_photo(update, context):
 # 处理动画消息（动图）
 async def handle_animation(update, context):
     chat_id = str(update.message.chat_id)
-    if update.message.chat.type == "private":
+    chat_type = update.message.chat.type
+    chat_title = update.message.chat.title or "私聊"
+    username = update.message.from_user.username or "未知用户"
+    print(f"收到动画消息 从{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id}), 用户: @{username}")
+    if chat_type == "private":
         file_id = update.message.animation.file_id
         last_file_id[chat_id] = file_id
         await update.message.reply_text(f"动图文件 ID: {file_id}")
@@ -170,7 +180,11 @@ async def handle_animation(update, context):
 # 处理视频消息
 async def handle_video(update, context):
     chat_id = str(update.message.chat_id)
-    if update.message.chat.type == "private":
+    chat_type = update.message.chat.type
+    chat_title = update.message.chat.title or "私聊"
+    username = update.message.from_user.username or "未知用户"
+    print(f"收到视频消息 从{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id}), 用户: @{username}")
+    if chat_type == "private":
         file_id = update.message.video.file_id
         last_file_id[chat_id] = file_id
         await update.message.reply_text(f"视频文件 ID: {file_id}")
@@ -182,11 +196,12 @@ async def handle_text(update, context):
     message_text = update.message.text.strip()
     chat_id = str(update.message.chat_id)
     user_id = str(update.message.from_user.id)
-    username = update.message.from_user.username
+    username = update.message.from_user.username or "未知用户"
     first_name = update.message.from_user.first_name.strip() if update.message.from_user.first_name else None
     operator_name = first_name or "未知用户"
-    print(f"收到消息: '{message_text}' 从用户 {user_id}, username: {username}, chat_id: {chat_id}")
-    print(f"当前操作员列表: {operators.get(chat_id, {})}")
+    chat_type = update.message.chat.type
+    chat_title = update.message.chat.title or "私聊"
+    print(f"收到消息: '{message_text}' 从{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id}), 用户: @{username}")
 
     if chat_id not in operators:
         operators[chat_id] = {initial_admin_username: True}
@@ -212,37 +227,37 @@ async def handle_text(update, context):
             await update.message.reply_text(
                 f"⚠️警告⚠️{first_name} 用户名不一致\n之前用户名@{old_username}\n现在用户名@{username}\n请注意查证‼️"
             )
-            print(f"用户名变更警告: {first_name}, 之前 @{old_username}, 现在 @{username}")
+            print(f"用户名变更警告: {first_name}, 之前 @{old_username}, 现在 @{username}, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
         elif first_name and first_name != old_first_name and username == old_username:
             await update.message.reply_text(
                 f"⚠️警告⚠️@{username} 昵称不一致\n之前昵称{old_first_name}\n现在昵称{first_name}\n请注意查证‼️"
             )
-            print(f"昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
+            print(f"昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
         user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
 
     # 记账功能
     if message_text == "开始":
         if username and username in operators.get(chat_id, {}):
-            print("匹配到 '开始' 指令")
+            print(f"匹配到 '开始' 指令, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
             transactions[chat_id].clear()  # 清空当前账单，重新开始记账
             is_accounting_enabled[chat_id] = True  # 确保启用记账
             await update.message.reply_text("欢迎使用winpay小秘书，我将全天为你服务")
 
     elif message_text == "停止记账":
         if username and username in operators.get(chat_id, {}):
-            print("匹配到 '停止记账' 指令")
+            print(f"匹配到 '停止记账' 指令, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
             is_accounting_enabled[chat_id] = False  # 暂停记账功能
             await update.message.reply_text("已暂停记账功能")
 
     elif message_text == "恢复记账":
         if username and username in operators.get(chat_id, {}):
-            print("匹配到 '恢复记账' 指令")
+            print(f"匹配到 '恢复记账' 指令, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
             is_accounting_enabled[chat_id] = True  # 恢复记账功能
             await update.message.reply_text("记账功能已恢复")
 
     elif message_text == "说明":
         if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
-            print("匹配到 '说明' 指令")
+            print(f"匹配到 '说明' 指令, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
             help_text = """
 可用指令：
 开始使用：开始
@@ -263,7 +278,7 @@ async def handle_text(update, context):
 
     elif (message_text.startswith("入款") or message_text.startswith("+")) and message_text != "+0":
         if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
-            print(f"匹配到 '入款' 或 '+' 指令，金额: {message_text.replace('入款', '').replace('+', '').strip()}")
+            print(f"匹配到 '入款' 或 '+' 指令，金额: {message_text.replace('入款', '').replace('+', '').strip()}, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
             try:
                 amount_str = message_text.replace("入款", "").replace("+", "").strip()
                 beijing_tz = pytz.timezone("Asia/Shanghai")
@@ -287,7 +302,7 @@ async def handle_text(update, context):
 
     elif message_text.startswith("下发"):
         if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
-            print(f"匹配到 '下发' 指令，金额: {message_text.replace('下发', '').strip()}")
+            print(f"匹配到 '下发' 指令，金额: {message_text.replace('下发', '').strip()}, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
             try:
                 amount_str = message_text.replace("下发", "").strip()
                 beijing_tz = pytz.timezone("Asia/Shanghai")
@@ -311,7 +326,7 @@ async def handle_text(update, context):
 
     elif message_text.startswith("设置操作员"):
         if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
-            print(f"匹配到 '设置操作员' 指令，参数: {message_text.replace('设置操作员', '').strip()}")
+            print(f"匹配到 '设置操作员' 指令，参数: {message_text.replace('设置操作员', '').strip()}, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
             operator = message_text.replace("设置操作员", "").strip()
             if operator.startswith("@"):
                 operator = operator[1:]  # 移除 @ 符号
@@ -324,7 +339,7 @@ async def handle_text(update, context):
 
     elif message_text.startswith("删除操作员"):
         if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
-            print(f"匹配到 '删除操作员' 指令，参数: {message_text.replace('删除操作员', '').strip()}")
+            print(f"匹配到 '删除操作员' 指令，参数: {message_text.replace('删除操作员', '').strip()}, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
             operator = message_text.replace("删除操作员", "").strip()
             if operator.startswith("@"):
                 operator = operator[1:]  # 移除 @ 符号
@@ -338,7 +353,7 @@ async def handle_text(update, context):
 
     elif message_text.startswith("设置入款汇率"):
         if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
-            print(f"匹配到 '设置入款汇率' 指令，汇率: {message_text.replace('设置入款汇率', '').strip()}")
+            print(f"匹配到 '设置入款汇率' 指令，汇率: {message_text.replace('设置入款汇率', '').strip()}, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
             try:
                 rate = float(message_text.replace("设置入款汇率", "").strip())
                 exchange_rate_deposit = round(rate, 3)
@@ -348,7 +363,7 @@ async def handle_text(update, context):
 
     elif message_text.startswith("设置入款费率"):
         if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
-            print(f"匹配到 '设置入款费率' 指令，费率: {message_text.replace('设置入款费率', '').strip()}")
+            print(f"匹配到 '设置入款费率' 指令，费率: {message_text.replace('设置入款费率', '').strip()}, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
             try:
                 rate = float(message_text.replace("设置入款费率", "").strip()) / 100
                 deposit_fee_rate = rate
@@ -358,7 +373,7 @@ async def handle_text(update, context):
 
     elif message_text.startswith("设置下发汇率"):
         if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
-            print(f"匹配到 '设置下发汇率' 指令，汇率: {message_text.replace('设置下发汇率', '').strip()}")
+            print(f"匹配到 '设置下发汇率' 指令，汇率: {message_text.replace('设置下发汇率', '').strip()}, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
             try:
                 rate = float(message_text.replace("设置下发汇率", "").strip())
                 exchange_rate_withdraw = round(rate, 3)
@@ -368,7 +383,7 @@ async def handle_text(update, context):
 
     elif message_text.startswith("设置下发费率"):
         if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
-            print(f"匹配到 '设置下发费率' 指令，费率: {message_text.replace('设置下发费率', '').strip()}")
+            print(f"匹配到 '设置下发费率' 指令，费率: {message_text.replace('设置下发费率', '').strip()}, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
             try:
                 rate = float(message_text.replace("设置下发费率", "").strip()) / 100
                 withdraw_fee_rate = rate
@@ -378,15 +393,15 @@ async def handle_text(update, context):
 
     elif message_text == "账单" or message_text == "+0":
         if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
-            print("匹配到 '账单' 或 '+0' 指令")
+            print(f"匹配到 '账单' 或 '+0' 指令, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
             await handle_bill(update, context)
 
     elif message_text == "删除":
         if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
-            print("匹配到 '删除' 指令")
+            print(f"匹配到 '删除' 指令, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
             if update.message.reply_to_message:
                 original_message = update.message.reply_to_message.text.strip()
-                print(f"尝试删除，原始消息: '{original_message}'")
+                print(f"尝试删除，原始消息: '{original_message}', 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
                 if original_message.startswith("+") and not original_message == "+0":
                     amount_str = original_message.replace("+", "").strip()
                     amount = float(amount_str.rstrip('uU'))
@@ -419,25 +434,25 @@ async def handle_text(update, context):
 
     elif message_text == "删除账单":
         if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
-            print("匹配到 '删除账单' 指令")
+            print(f"匹配到 '删除账单' 指令, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
             transactions[chat_id].clear()
             await update.message.reply_text("今日已清账💰，重新开始记账")
 
     elif message_text == "日切" and username == initial_admin_username:
         if username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
-            print("匹配到 '日切' 指令")
+            print(f"匹配到 '日切' 指令, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
             transactions[chat_id].clear()
             await update.message.reply_text("交易记录已清空")
 
     elif message_text == "操作员列表":
         if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
-            print("匹配到 '操作员列表' 指令")
+            print(f"匹配到 '操作员列表' 指令, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
             op_list = ", ".join([f"@{op}" for op in operators.get(chat_id, {})])
             await update.message.reply_text(f"当前操作员列表: {op_list}" if op_list else "当前无操作员")
 
     elif re.match(r'^[T][a-km-zA-HJ-NP-Z1-9]{33}$', message_text):
         if is_accounting_enabled.get(chat_id, True):
-            print("匹配到 TRX 地址验证")
+            print(f"匹配到 TRX 地址验证: {message_text}, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
             chat_id = str(update.message.chat_id)
             current_user = f"@{username}" if username else "未知用户"
             address_verify_count[chat_id]["count"] += 1
@@ -454,6 +469,7 @@ async def handle_text(update, context):
     if update.message.chat.type == "private":
         # 显示群发说明
         if message_text == "群发说明":
+            print(f"匹配到 '群发说明' 指令, 在私聊 (ID: {chat_id})")
             help_text = """
 ### 群发指令说明
 
@@ -517,6 +533,7 @@ async def handle_text(update, context):
 
         # 其余群发逻辑
         if message_text.startswith("编辑 "):
+            print(f"匹配到 '编辑' 指令，参数: {message_text.replace('编辑 ', '')}, 在私聊 (ID: {chat_id})")
             parts = message_text.split(" ", 2)
             if len(parts) == 3 and parts[1] and parts[2]:
                 template_name = parts[1]
@@ -531,6 +548,7 @@ async def handle_text(update, context):
                 await update.message.reply_text("使用格式：编辑 模板名 广告文")
 
         if message_text.startswith("任务 ") and not message_text.endswith("-1"):
+            print(f"匹配到 '任务' 指令，参数: {message_text.replace('任务 ', '')}, 在私聊 (ID: {chat_id})")
             parts = message_text.split(" ", 3)
             if len(parts) == 4 and parts[1] and parts[2] and parts[3]:
                 team_name, time_str, template_name = parts[1], parts[2], parts[3]
@@ -546,6 +564,7 @@ async def handle_text(update, context):
                     await update.message.reply_text("时间格式错误，请使用 HH:MM，例如 17:00")
 
         if message_text.startswith("确认 "):
+            print(f"匹配到 '确认' 指令，任务 ID: {message_text.replace('确认 ', '').strip()}, 在私聊 (ID: {chat_id})")
             task_id = message_text.replace("确认 ", "").strip()
             if task_id in scheduled_tasks:
                 task = scheduled_tasks[task_id]
@@ -562,6 +581,7 @@ async def handle_text(update, context):
                 await update.message.reply_text("无效的任务 ID")
 
         if message_text.startswith("任务 ") and message_text.endswith("-1"):
+            print(f"匹配到 '任务取消' 指令，队名: {message_text.replace('任务 ', '').replace('-1', '').strip()}, 在私聊 (ID: {chat_id})")
             team_name = message_text.replace("任务 ", "").replace("-1", "").strip()
             for task_id, task in list(scheduled_tasks.items()):
                 if task["team"] == team_name:
@@ -573,6 +593,7 @@ async def handle_text(update, context):
                 await update.message.reply_text("无此队名的待执行任务")
 
         if message_text.startswith("编队 "):
+            print(f"匹配到 '编队' 指令，参数: {message_text.replace('编队 ', '')}, 在私聊 (ID: {chat_id})")
             parts = message_text.split(" ", 2)
             if len(parts) == 3 and parts[1] and parts[2]:
                 team_name = parts[1]
@@ -588,6 +609,7 @@ async def handle_text(update, context):
                 await update.message.reply_text("使用格式：编队 队名 群ID, 群ID")
 
         if message_text.startswith("删除 "):
+            print(f"匹配到 '删除编队' 指令，参数: {message_text.replace('删除 ', '')}, 在私聊 (ID: {chat_id})")
             parts = message_text.split(" ", 2)
             if len(parts) == 3 and parts[1] and parts[2]:
                 team_name = parts[1]
@@ -616,6 +638,14 @@ def main():
     application.add_handler(MessageHandler(filters.ANIMATION & filters.ChatType.PRIVATE, handle_animation))
     application.add_handler(MessageHandler(filters.VIDEO & filters.ChatType.PRIVATE, handle_video))
     application.add_handler(MessageHandler(filters.TEXT, handle_text))
+
+    # 添加 schedule 线程以确保定时任务运行
+    import threading
+    def run_schedule():
+        while True:
+            schedule.run_pending()
+            time.sleep(60)
+    threading.Thread(target=run_schedule, daemon=True).start()
 
     setup_schedule()
 
