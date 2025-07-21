@@ -122,7 +122,7 @@ def format_exchange_rate(rate):
         return f"{rate:.2f}"
     return formatted
 
-# 处理所有消息（移除获取群 ID 逻辑）
+# 处理所有消息（保持不变）
 async def handle_message(update, context):
     global exchange_rate_deposit, deposit_fee_rate, exchange_rate_withdraw, withdraw_fee_rate, operators, transactions, user_history, address_verify_count
     global is_accounting_enabled, team_groups, scheduled_tasks, last_file_id, templates
@@ -539,7 +539,7 @@ async def send_broadcast(context, task):
             except Exception as e:
                 logger.error(f"发送至群组 {group_id} 失败: {e}")
 
-# 主函数（简化）
+# 主函数（修正事件循环管理）
 async def main():
     port = int(os.getenv("PORT", "10000"))
     logger.info(f"Listening on port: {port}")
@@ -567,6 +567,7 @@ async def main():
 
     try:
         logger.info("尝试启动 Webhook...")
+        # 使用 run_webhook 直接运行，无需外部 asyncio.run
         await application.run_webhook(
             listen="0.0.0.0",
             port=port,
@@ -576,8 +577,16 @@ async def main():
     except Exception as e:
         logger.error(f"Webhook 设置失败: {e}")
     finally:
+        # 确保关闭 Application
         await application.shutdown()
 
-# 运行主函数
+# 运行主函数（移除 asyncio.run，使用现有循环）
 if __name__ == '__main__':
-    asyncio.run(main())
+    # 获取或创建事件循环
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        loop.close()
