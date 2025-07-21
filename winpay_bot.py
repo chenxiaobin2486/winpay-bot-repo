@@ -197,6 +197,14 @@ async def handle_message(update, context):
             print(f"昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
         user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
 
+    # 自动获取私聊文件 ID
+    if update.message.chat.type == "private" and (update.message.document or update.message.photo or update.message.animation):
+        file_id = (update.message.document.file_id if update.message.document 
+                  else update.message.photo[-1].file_id if update.message.photo 
+                  else update.message.animation.file_id)
+        last_file_id[chat_id] = file_id
+        await update.message.reply_text(f"自动获取文件 ID: {file_id}")
+
     # 记账功能
     if message_text == "开始":
         if username and username in operators.get(chat_id, {}):
