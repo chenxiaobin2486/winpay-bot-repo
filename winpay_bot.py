@@ -21,7 +21,7 @@ exchange_rate_deposit = 1.0
 deposit_fee_rate = 0.0
 exchange_rate_withdraw = 1.0
 withdraw_fee_rate = 0.0
-
+address_verify_count = {}  # {chat_id: {"count": int, "last_user": str}}，记录地址验证次数和上次发送人
 # 设置日志任务
 def setup_schedule():
     schedule.every().day.at("00:00").do(lambda: asyncio.run(job()))
@@ -130,7 +130,7 @@ async def welcome_new_member(update: telegram.Update, context: telegram.ext.Cont
 
 # 处理所有消息
 async def handle_message(update, context):
-    global exchange_rate_deposit, deposit_fee_rate, exchange_rate_withdraw, withdraw_fee_rate, operators, transactions, user_history
+    global exchange_rate_deposit, deposit_fee_rate, exchange_rate_withdraw, withdraw_fee_rate, operators, transactions, user_history, address_verify_count
     message_text = update.message.text.strip()
     chat_id = str(update.message.chat_id)
     user_id = str(update.message.from_user.id)
@@ -146,6 +146,8 @@ async def handle_message(update, context):
         transactions[chat_id] = []
     if chat_id not in user_history:
         user_history[chat_id] = {}
+    if chat_id not in address_verify_count:
+        address_verify_count[chat_id] = {"count": 0, "last_user": None}
 
     # 更新或记录用户历史
     if user_id not in user_history[chat_id]:
@@ -156,12 +158,12 @@ async def handle_message(update, context):
         old_first_name = old_data["first_name"]
         if username and username != old_username and first_name == old_first_name:
             await update.message.reply_text(
-                f"⚠️警告⚠️{first_name} 用户名不一致\n之前用户名@{old_username}\n现在用户名@{username}\n请注意查证‼️"
+                f"⚠️防骗提示⚠️{first_name} 用户名不一致\n之前用户名@{old_username}\n现在用户名@{username}\n请注意查证‼️"
             )
             print(f"用户名变更警告: {first_name}, 之前 @{old_username}, 现在 @{username}")
         elif first_name and first_name != old_first_name and username == old_username:
             await update.message.reply_text(
-                f"⚠️警告⚠️@{username} 昵称不一致\n之前昵称{old_first_name}\n现在昵称{first_name}\n请注意查证‼️"
+                f"⚠️防骗提示⚠️@{username} 昵称不一致\n之前昵称{old_first_name}\n现在昵称{first_name}\n请注意查证‼️"
             )
             print(f"昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
         user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
@@ -353,7 +355,17 @@ async def handle_message(update, context):
             await update.message.reply_text(f"当前操作员列表: {op_list}" if op_list else "当前无操作员")
     elif re.match(r'^[T][a-km-zA-HJ-NP-Z1-9]{33}$', message_text):
         print("匹配到 TRX 地址验证")
-        await update.message.reply_text("TRX地址验证成功")
+        chat_id = str(update.message.chat_id)
+        current_user = f"@{username}" if username else "未知用户"
+        address_verify_count[chat_id]["count"] += 1
+        last_user = address_verify_count[chat_id]["last_user"] or "无"
+        address_verify_count[chat_id]["last_user"] = current_user
+        await update.message.reply_text(
+            f"{message_text}\n"
+            f"验证次数：{address_verify_count[chat_id]['count']}\n"
+            f"本次发送人：{current_user}\n"
+            f"上次发送人：{last_user}"
+        )
 
 # 主函数
 def main():
