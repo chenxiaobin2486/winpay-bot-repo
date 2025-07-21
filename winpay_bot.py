@@ -8,6 +8,8 @@ import os
 import asyncio
 from datetime import datetime, timezone
 import pytz
+import random
+import string
 
 # 定义 Bot Token（从环境变量获取）
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7908773608:AAFFqLmGkJ9zbsuymQTFzJxy5IyeN1E9M-U")
@@ -23,6 +25,10 @@ exchange_rate_withdraw = 1.0
 withdraw_fee_rate = 0.0
 address_verify_count = {}  # {chat_id: {"count": int, "last_user": str}}，记录地址验证次数和上次发送人
 is_accounting_enabled = {}  # {chat_id: bool}，控制记账状态，默认为 True
+team_groups = {}  # {队名: [群ID列表]}
+scheduled_tasks = {}  # {任务ID: {"team": 队名, "template": 模板名, "time": 任务时间}}
+last_file_id = {}  # {chat_id: 文件ID}
+templates = {}  # {模板名: {"message": 广告文, "file_id": 文件ID}}
 
 # 设置日志任务
 def setup_schedule():
@@ -130,9 +136,26 @@ async def welcome_new_member(update: telegram.Update, context: telegram.ext.Cont
             nickname = first_name or username or "新朋友"
             await update.message.reply_text(f"欢迎 {nickname} 来到本群")
 
+# 群发执行函数
+async def send_broadcast(context, task):
+    team_name = task["team"]
+    template_name = task["template"]
+    if team_name in team_groups and template_name in templates:
+        template = templates[template_name]
+        for group_id in team_groups[team_name]:
+            try:
+                if template["file_id"]:
+                    await context.bot.send_animation(chat_id=group_id, animation=template["file_id"], caption=template["message"])
+                else:
+                    await context.bot.send_message(chat_id=group_id, text=template["message"])
+                print(f"已发送至群组 {group_id}")
+            except Exception as e:
+                print(f"发送至群组 {group_id} 失败: {e}")
+
 # 处理所有消息
 async def handle_message(update, context):
     global exchange_rate_deposit, deposit_fee_rate, exchange_rate_withdraw, withdraw_fee_rate, operators, transactions, user_history, address_verify_count, is_accounting_enabled
+    global team_groups, scheduled_tasks, last_file_id, templates
     message_text = update.message.text.strip()
     chat_id = str(update.message.chat_id)
     user_id = str(update.message.from_user.id)
@@ -152,6 +175,8 @@ async def handle_message(update, context):
         address_verify_count[chat_id] = {"count": 0, "last_user": None}
     if chat_id not in is_accounting_enabled:
         is_accounting_enabled[chat_id] = True  # 默认启用记账
+    if chat_id not in last_file_id:
+        last_file_id[chat_id] = None
 
     # 更新或记录用户历史
     if user_id not in user_history[chat_id]:
@@ -401,6 +426,168 @@ async def handle_message(update, context):
                 f"本次发送人：{current_user}\n"
                 f"上次发送人：{last_user}"
             )
+
+    # 群发功能（仅私聊有效）
+    if update.message.chat.type == "private":
+        # 处理文件消息，获取文件 ID
+        if update.message.document or update.message.photo or update.message.animation:
+            file_id = (update.message.document.file_id if update.message.document 
+                      else update.message.photo[-1].file_id if update.message.photo 
+                      else update.message.animation.file_id)
+            last_file_id[chat_id] = file_id
+            await update.message.reply_text(f"文件 ID: {file_id}")
+
+        # 显示群发说明
+        if message_text == "群发说明":
+            help_text = """
+### 群发指令说明
+
+**注意**：此说明仅在私聊中通过指令 `群发说明` 查看，所有群发相关功能仅在私聊中有效，所有操作员均可使用。
+
+1. **获取群 ID 的方式**  
+   - 方法：  
+     1. 打开 Telegram 应用，进入目标群聊。  
+     2. 点击群聊名称进入群组信息页面。  
+     3. 点击“添加成员”或“邀请链接”（需要管理员权限），复制群 ID（例如 `-1001234567890`）。  
+     4. 在私聊中手动输入群 ID 使用 `编队` 指令。  
+   - 注意：群 ID 需为数字格式，例如 `-1001234567890`。
+
+2. **编辑模板**  
+   - 指令：`编辑 模板名 广告文`  
+   - 功能：创建或更新指定模板名对应的广告文，并自动关联最近在私聊发送的动图、视频或图片文件 ID。  
+   - 示例：  
+     - 先发送一个 `.gif` 文件，机器人回复文件 ID。  
+     - 然后输入 `编辑 模板1 欢迎体验我们的服务！`  
+     - 结果：模板 `模板1` 记录广告文“欢迎体验我们的服务！”及相关文件 ID。  
+   - 注意：若模板已存在，则覆盖原有内容。
+
+3. **创建群发任务**  
+   - 指令：`任务 队名 时间 模板名`  
+   - 功能：为指定编队（队名）设置群发任务，使用指定模板的广告文和文件 ID，时间格式为 `HH:MM`（24小时制）。  
+   - 示例：`任务 广告队 17:00 模板1`  
+   - 结果：机器人生成唯一任务 ID（例如 `12345`），回复“任务已创建，任务 ID: 12345，请回复 `确认 12345` 执行”。  
+   - 时间处理：以服务器时间（+07）为准，若时间已过当天自动调整为次日。
+
+4. **确认任务**  
+   - 指令：`确认 任务ID`  
+   - 功能：确认执行指定任务 ID 对应的群发任务。  
+   - 示例：`确认 12345`  
+   - 结果：任务按设定时间执行，向编队中的所有群组发送模板内容。
+
+5. **取消任务**  
+   - 指令：`任务 队名 -1`  
+   - 功能：取消指定队名的待执行任务。  
+   - 示例：`任务 广告队 -1`  
+   - 结果：若存在对应队名的任务，则取消并回复“任务已取消”。
+
+6. **创建/更新编队**  
+   - 指令：`编队 队名 群ID, 群ID`  
+   - 功能：创建或更新指定队名对应的群组列表，使用逗号分隔多个群 ID。  
+   - 示例：`编队 广告队 -1001234567890, -1009876543210`  
+   - 结果：成功时回复“编队已更新”，若群 ID 无效则回复“任务目标有误请检查”。
+
+7. **从编队删除群组**  
+   - 指令：`删除 队名 群ID, 群ID`  
+   - 功能：从指定队名中删除一个或多个群 ID。  
+   - 示例：`删除 广告队 -1001234567890`  
+   - 结果：成功时回复“群组已从编队移除”，若队名或群 ID 无效则回复“任务目标有误请检查”。
+
+### 注意事项
+- **私聊限制**：以上指令仅在私聊与机器人对话时有效。
+- **文件支持**：支持动图（`.gif`）、视频（`.mp4`）和图片（`.jpg/.png`），需先在私聊发送文件以获取文件 ID。
+- **时间调整**：若设定时间已过当天，自动调整为次日。
+- **错误处理**：编队不存在或群 ID 无效时，回复“任务目标有误请检查”。
+            """
+            await update.message.reply_text(help_text)
+
+        # 其余群发逻辑
+        if message_text.startswith("编辑 "):
+            parts = message_text.split(" ", 2)
+            if len(parts) == 3 and parts[1] and parts[2]:
+                template_name = parts[1]
+                message = parts[2]
+                file_id = last_file_id.get(chat_id)
+                if file_id:
+                    templates[template_name] = {"message": message, "file_id": file_id}
+                    await update.message.reply_text(f"模板 {template_name} 已更新")
+                else:
+                    await update.message.reply_text("请先发送动图、视频或图片以获取文件 ID")
+            else:
+                await update.message.reply_text("使用格式：编辑 模板名 广告文")
+
+        if message_text.startswith("任务 ") and not message_text.endswith("-1"):
+            parts = message_text.split(" ", 3)
+            if len(parts) == 4 and parts[1] and parts[2] and parts[3]:
+                team_name, time_str, template_name = parts[1], parts[2], parts[3]
+                try:
+                    current_time = datetime.now(pytz.timezone("Asia/Bangkok"))
+                    scheduled_time = current_time.replace(hour=int(time_str.split(":")[0]), minute=int(time_str.split(":")[1]), second=0, microsecond=0)
+                    if scheduled_time < current_time:
+                        scheduled_time += timedelta(days=1)
+                    task_id = ''.join(random.choices(string.ascii_letters + string.digits, k=5))
+                    scheduled_tasks[task_id] = {"team": team_name, "template": template_name, "time": scheduled_time}
+                    await update.message.reply_text(f"任务已创建，任务 ID: {task_id}，请回复 `确认 {task_id}` 执行")
+                except (ValueError, IndexError):
+                    await update.message.reply_text("时间格式错误，请使用 HH:MM，例如 17:00")
+
+        if message_text.startswith("确认 "):
+            task_id = message_text.replace("确认 ", "").strip()
+            if task_id in scheduled_tasks:
+                task = scheduled_tasks[task_id]
+                team_name, template_name = task["team"], task["template"]
+                if team_name in team_groups and template_name in templates:
+                    schedule.every().day.at(task["time"].strftime("%H:%M")).do(
+                        lambda t=task: asyncio.run(send_broadcast(context, t))
+                    ).tag(task_id)
+                    await update.message.reply_text(f"任务 {task_id} 已计划，等待执行")
+                    del scheduled_tasks[task_id]  # 移除待确认任务
+                else:
+                    await update.message.reply_text("任务目标有误请检查")
+            else:
+                await update.message.reply_text("无效的任务 ID")
+
+        if message_text.startswith("任务 ") and message_text.endswith("-1"):
+            team_name = message_text.replace("任务 ", "").replace("-1", "").strip()
+            for task_id, task in list(scheduled_tasks.items()):
+                if task["team"] == team_name:
+                    schedule.clear(task_id)
+                    del scheduled_tasks[task_id]
+                    await update.message.reply_text("任务已取消")
+                    break
+            else:
+                await update.message.reply_text("无此队名的待执行任务")
+
+        if message_text.startswith("编队 "):
+            parts = message_text.split(" ", 2)
+            if len(parts) == 3 and parts[1] and parts[2]:
+                team_name = parts[1]
+                group_ids = [gid.strip() for gid in parts[2].split(",") if gid.strip()]
+                try:
+                    for gid in group_ids:
+                        int(gid)  # 验证群 ID 是否为整数
+                    team_groups[team_name] = group_ids
+                    await update.message.reply_text("编队已更新")
+                except ValueError:
+                    await update.message.reply_text("任务目标有误请检查")
+            else:
+                await update.message.reply_text("使用格式：编队 队名 群ID, 群ID")
+
+        if message_text.startswith("删除 "):
+            parts = message_text.split(" ", 2)
+            if len(parts) == 3 and parts[1] and parts[2]:
+                team_name = parts[1]
+                group_ids = [gid.strip() for gid in parts[2].split(",") if gid.strip()]
+                if team_name in team_groups:
+                    for gid in group_ids:
+                        if gid in team_groups[team_name]:
+                            team_groups[team_name].remove(gid)
+                    if not team_groups[team_name]:
+                        del team_groups[team_name]
+                    await update.message.reply_text("群组已从编队移除")
+                else:
+                    await update.message.reply_text("任务目标有误请检查")
+            else:
+                await update.message.reply_text("使用格式：删除 队名 群ID, 群ID")
 
 # 主函数
 def main():
