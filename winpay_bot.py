@@ -233,11 +233,13 @@ async def handle_message(update, context):
         if username and username in operators.get(chat_id, {}):
             logger.info(f"匹配到 '入款' 或 '+' 指令，原始消息: {message_text}")
             try:
-                # 使用改进的正则表达式提取金额
-                amount_match = re.search(r'(?<=入款|下发|\+|^)\s*(\d+(\.\d+)?[uU]?)', message_text, re.IGNORECASE)
+                # 使用修正的正则表达式提取金额
+                amount_match = re.search(r'^(\+|\b入款\b|\b下发\b)\s*(\d+(\.\d+)?[uU]?)', message_text, re.IGNORECASE)
                 if not amount_match:
                     raise ValueError("无效金额格式")
-                amount_str = amount_match.group(1).strip()
+                amount_str = amount_match.group(2).strip() if amount_match.group(2) else None
+                if not amount_str:
+                    raise ValueError("未找到有效金额")
                 beijing_tz = pytz.timezone("Asia/Shanghai")
                 utc_time = update.message.date.replace(tzinfo=timezone.utc)
                 timestamp = utc_time.astimezone(beijing_tz).strftime("%H:%M")
@@ -252,16 +254,21 @@ async def handle_message(update, context):
                 await handle_bill(update, context)
             except ValueError as e:
                 await update.message.reply_text(f"请输入正确金额，例如：入款1000 或 +1000 或 +100u。错误: {str(e)}")
+            except Exception as e:
+                logger.error(f"处理入款命令失败: {e}")
+                await update.message.reply_text("处理命令时发生错误，请稍后重试或联系管理员。")
 
     elif message_text.startswith("下发") and is_accounting_enabled.get(chat_id, True):
         if username and username in operators.get(chat_id, {}):
             logger.info(f"匹配到 '下发' 指令，原始消息: {message_text}")
             try:
-                # 使用改进的正则表达式提取金额
-                amount_match = re.search(r'(?<=入款|下发|\+|^)\s*(\d+(\.\d+)?[uU]?)', message_text, re.IGNORECASE)
+                # 使用修正的正则表达式提取金额
+                amount_match = re.search(r'^(\+|\b入款\b|\b下发\b)\s*(\d+(\.\d+)?[uU]?)', message_text, re.IGNORECASE)
                 if not amount_match:
                     raise ValueError("无效金额格式")
-                amount_str = amount_match.group(1).strip()
+                amount_str = amount_match.group(2).strip() if amount_match.group(2) else None
+                if not amount_str:
+                    raise ValueError("未找到有效金额")
                 beijing_tz = pytz.timezone("Asia/Shanghai")
                 utc_time = update.message.date.replace(tzinfo=timezone.utc)
                 timestamp = utc_time.astimezone(beijing_tz).strftime("%H:%M")
@@ -276,6 +283,9 @@ async def handle_message(update, context):
                 await handle_bill(update, context)
             except ValueError as e:
                 await update.message.reply_text(f"请输入正确金额，例如：下发500 或 下发50u。错误: {str(e)}")
+            except Exception as e:
+                logger.error(f"处理下发命令失败: {e}")
+                await update.message.reply_text("处理命令时发生错误，请稍后重试或联系管理员。")
 
     elif message_text.startswith("设置入款汇率") and is_accounting_enabled.get(chat_id, True):
         if username and username in operators.get(chat_id, {}):
