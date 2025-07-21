@@ -38,15 +38,7 @@ scheduled_tasks = {}  # {任务ID: {"team": 队名, "template": 模板名, "time
 last_file_id = {}  # {chat_id: 文件ID}
 templates = {}  # {模板名: {"message": 广告文, "file_id": 文件ID}}
 
-# 设置日志任务
-def setup_schedule():
-    schedule.every().day.at("00:00").do(lambda: asyncio.run(job()))
-
-# 定义日志功能
-async def job():
-    print("执行日志任务", time.ctime())
-
-# 账单处理函数（保持不变）
+# 账单处理函数
 async def handle_bill(update, context):
     chat_id = str(update.message.chat_id)
     if chat_id not in transactions:
@@ -108,24 +100,48 @@ async def handle_bill(update, context):
 
     await update.message.reply_text(bill if transactions[chat_id] else "无交易记录")
 
-# 格式化金额函数（保持不变）
+# 格式化金额函数
 def format_amount(amount):
     formatted = f"{amount:.2f}"
     if formatted.endswith(".00"):
         return str(int(amount))
     return formatted
 
-# 格式化汇率函数（保持不变）
+# 格式化汇率函数
 def format_exchange_rate(rate):
     formatted = f"{rate:.3f}"
     if formatted.endswith("0"):
         return f"{rate:.2f}"
     return formatted
 
-# 处理所有消息（保持不变）
+# 设置日志任务
+def setup_schedule():
+    schedule.every().day.at("00:00").do(lambda: asyncio.run(job()))
+
+# 定义日志功能
+async def job():
+    print("执行日志任务", time.ctime())
+
+# 群发执行函数
+async def send_broadcast(context, task):
+    team_name = task["team"]
+    template_name = task["template"]
+    if team_name in team_groups and template_name in templates:
+        template = templates[template_name]
+        for group_id in team_groups[team_name]:
+            try:
+                if template["file_id"]:
+                    await context.bot.send_animation(chat_id=group_id, animation=template["file_id"], caption=template["message"])
+                else:
+                    await context.bot.send_message(chat_id=group_id, text=template["message"])
+                logger.info(f"已发送至群组 {group_id}")
+            except Exception as e:
+                logger.error(f"发送至群组 {group_id} 失败: {e}")
+
+# 处理所有消息
 async def handle_message(update, context):
     global exchange_rate_deposit, deposit_fee_rate, exchange_rate_withdraw, withdraw_fee_rate, operators, transactions, user_history, address_verify_count
-    global is_accounting_enabled, team_groups, scheduled_tasks, last_file_id, templates
+    global team_groups, scheduled_tasks, last_file_id, templates
     message_text = update.message.text.strip()
     chat_id = str(update.message.chat_id)
     user_id = str(update.message.from_user.id)
@@ -135,7 +151,7 @@ async def handle_message(update, context):
     logger.info(f"收到消息: '{message_text}' 从用户 {user_id}, username: {username}, chat_id: {chat_id}")
     logger.info(f"当前操作员列表: {operators.get(chat_id, {})}")
 
-    # 初始化状态
+    # 记账部分初始化
     if chat_id not in operators:
         operators[chat_id] = {initial_admin_username: True}
     if chat_id not in transactions:
@@ -145,7 +161,9 @@ async def handle_message(update, context):
     if chat_id not in address_verify_count:
         address_verify_count[chat_id] = {"count": 0, "last_user": None}
     if chat_id not in is_accounting_enabled:
-        is_accounting_enabled[chat_id] = True
+        is_accounting_enabled[chat_id] = True  # 默认启用记账
+
+    # 群发部分初始化
     if chat_id not in last_file_id:
         last_file_id[chat_id] = None
 
@@ -173,13 +191,13 @@ async def handle_message(update, context):
         if username and username in operators.get(chat_id, {}):
             logger.info("匹配到 '开始' 指令")
             transactions[chat_id].clear()  # 清空当前账单
-            is_accounting_enabled[chat_id] = True  # 确保记账功能启用
+            is_accounting_enabled[chat_id] = True  # 恢复记账功能
             await update.message.reply_text("欢迎使用winpay小秘书，全天候为你服务")
 
     elif message_text == "停止记账":
         if username and username in operators.get(chat_id, {}):
             logger.info("匹配到 '停止记账' 指令")
-            is_accounting_enabled[chat_id] = False  # 停止记账功能
+            is_accounting_enabled[chat_id] = False  # 暂停记账功能
             await update.message.reply_text("已暂停记账功能")
 
     elif message_text == "恢复记账":
@@ -321,7 +339,7 @@ async def handle_message(update, context):
                             if t_amount == amount and has_u == t_has_u:
                                 transactions[chat_id].remove(t)
                                 await update.message.reply_text(f"入款 {format_amount(amount)}{'u' if has_u else ''} 已被撤销")
-                                await handle_bill(update, context)
+                                await handle_bill(update, context)  # 自动显示账单
                                 return
                 elif original_message.startswith("下发"):
                     amount_str = original_message.replace("下发", "").strip()
@@ -334,7 +352,7 @@ async def handle_message(update, context):
                             if t_amount == amount and has_u == t_has_u:
                                 transactions[chat_id].remove(t)
                                 await update.message.reply_text(f"下发 {format_amount(amount)}{'u' if has_u else ''} 已被撤销")
-                                await handle_bill(update, context)
+                                await handle_bill(update, context)  # 自动显示账单
                                 return
                 await update.message.reply_text("无法撤销此消息，请确保回复正确的入款或下发记录")
             else:
@@ -374,6 +392,7 @@ async def handle_message(update, context):
 
     # 群发功能（仅私聊有效）
     if update.message.chat.type == "private":
+        # 处理文件消息，获取文件 ID
         if update.message.document or update.message.photo or update.message.animation:
             file_id = (update.message.document.file_id if update.message.document 
                       else update.message.photo[-1].file_id if update.message.photo 
@@ -381,13 +400,51 @@ async def handle_message(update, context):
             last_file_id[chat_id] = file_id
             await update.message.reply_text(f"文件 ID: {file_id}")
 
+        # 自动解析邀请链接
+        if re.match(r'https?://t\.me/\+\w+', message_text):
+            logger.info(f"Attempting to parse invite link: {message_text}")
+            try:
+                # 尝试使用 joinChat 加入群组
+                join_response = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/joinChat?invite_link={message_text}")
+                join_data = join_response.json()
+                logger.info(f"Join response: {join_data}")
+                if join_data.get("ok"):
+                    # 加入成功后获取群 ID
+                    chat_response = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getChat?chat_id={message_text.split('+')[1]}")
+                    chat_data = chat_response.json()
+                    logger.info(f"GetChat response: {chat_data}")
+                    if chat_data.get("ok"):
+                        group_chat_id = str(chat_data["result"]["id"])
+                        await update.message.reply_text(f"群 ID: {group_chat_id}")
+                    else:
+                        error_desc = chat_data.get("description", "Unknown error")
+                        logger.error(f"GetChat error: {error_desc}")
+                        await update.message.reply_text(f"链接解析失败: {error_desc}. 请检查链接有效性。")
+                else:
+                    error_desc = join_data.get("description", "Unknown error")
+                    logger.error(f"Join error: {error_desc}")
+                    await update.message.reply_text(f"链接无效请检查: {error_desc}. 请确保链接有效且机器人有权限加入。")
+            except requests.RequestException as e:
+                logger.error(f"Request failed: {e}")
+                await update.message.reply_text("链接无效请检查: 网络错误或API调用失败")
+
+        # 显示群发说明
         if message_text == "群发说明":
             help_text = """
 ### 群发指令说明
 
 **注意**：此说明仅在私聊中通过指令 `群发说明` 查看，所有群发相关功能仅在私聊中有效，所有操作员均可使用。
 
-1. **编辑模板**  
+1. **获取群 ID 的方式**  
+   - 方法：  
+     1. 打开 Telegram 应用，进入目标群聊。  
+     2. 点击群聊名称进入群组信息页面。  
+     3. 点击“添加成员”或“邀请链接”（需要管理员权限），复制邀请链接（例如 `https://t.me/+nW4I6Y81dec5MWE1`）。  
+     4. 在私聊中直接发送该链接给机器人。  
+   - 功能：机器人自动解析链接，成功时回复“群 ID: -1001234567890”，失败时回复“链接无效请检查”。  
+   - 注意：确保链接有效，机器人需有权限加入该群。
+
+2. **编辑模板**  
    - 指令：`编辑 模板名 广告文`  
    - 功能：创建或更新指定模板名对应的广告文，并自动关联最近在私聊发送的动图、视频或图片文件 ID。  
    - 示例：  
@@ -396,32 +453,32 @@ async def handle_message(update, context):
      - 结果：模板 `模板1` 记录广告文“欢迎体验我们的服务！”及相关文件 ID。  
    - 注意：若模板已存在，则覆盖原有内容。
 
-2. **创建群发任务**  
+3. **创建群发任务**  
    - 指令：`任务 队名 时间 模板名`  
    - 功能：为指定编队（队名）设置群发任务，使用指定模板的广告文和文件 ID，时间格式为 `HH:MM`（24小时制）。  
    - 示例：`任务 广告队 17:00 模板1`  
    - 结果：机器人生成唯一任务 ID（例如 `12345`），回复“任务已创建，任务 ID: 12345，请回复 `确认 12345` 执行”。  
    - 时间处理：以服务器时间（+07）为准，若时间已过当天自动调整为次日。
 
-3. **确认任务**  
+4. **确认任务**  
    - 指令：`确认 任务ID`  
    - 功能：确认执行指定任务 ID 对应的群发任务。  
    - 示例：`确认 12345`  
    - 结果：任务按设定时间执行，向编队中的所有群组发送模板内容。
 
-4. **取消任务**  
+5. **取消任务**  
    - 指令：`任务 队名 -1`  
    - 功能：取消指定队名的待执行任务。  
    - 示例：`任务 广告队 -1`  
    - 结果：若存在对应队名的任务，则取消并回复“任务已取消”。
 
-5. **创建/更新编队**  
+6. **创建/更新编队**  
    - 指令：`编队 队名 群ID, 群ID`  
    - 功能：创建或更新指定队名对应的群组列表，使用逗号分隔多个群 ID。  
    - 示例：`编队 广告队 -1001234567890, -1009876543210`  
    - 结果：成功时回复“编队已更新”，若群 ID 无效则回复“任务目标有误请检查”。
 
-6. **从编队删除群组**  
+7. **从编队删除群组**  
    - 指令：`删除 队名 群ID, 群ID`  
    - 功能：从指定队名中删除一个或多个群 ID。  
    - 示例：`删除 广告队 -1001234567890`  
@@ -435,6 +492,7 @@ async def handle_message(update, context):
             """
             await update.message.reply_text(help_text)
 
+        # 其余群发逻辑
         if message_text.startswith("编辑 "):
             parts = message_text.split(" ", 2)
             if len(parts) == 3 and parts[1] and parts[2]:
@@ -474,7 +532,7 @@ async def handle_message(update, context):
                         lambda t=task: asyncio.run(send_broadcast(context, t))
                     ).tag(task_id)
                     await update.message.reply_text(f"任务 {task_id} 已计划，等待执行")
-                    del scheduled_tasks[task_id]
+                    del scheduled_tasks[task_id]  # 移除待确认任务
                 else:
                     await update.message.reply_text("任务目标有误请检查")
             else:
@@ -498,7 +556,7 @@ async def handle_message(update, context):
                 group_ids = [gid.strip() for gid in parts[2].split(",") if gid.strip()]
                 try:
                     for gid in group_ids:
-                        int(gid)
+                        int(gid)  # 验证群 ID 是否为整数
                     team_groups[team_name] = group_ids
                     await update.message.reply_text("编队已更新")
                 except ValueError:
@@ -523,38 +581,17 @@ async def handle_message(update, context):
             else:
                 await update.message.reply_text("使用格式：删除 队名 群ID, 群ID")
 
-# 群发执行函数（保持不变）
-async def send_broadcast(context, task):
-    team_name = task["team"]
-    template_name = task["template"]
-    if team_name in team_groups and template_name in templates:
-        template = templates[template_name]
-        for group_id in team_groups[team_name]:
-            try:
-                if template["file_id"]:
-                    await context.bot.send_animation(chat_id=group_id, animation=template["file_id"], caption=template["message"])
-                else:
-                    await context.bot.send_message(chat_id=group_id, text=template["message"])
-                logger.info(f"已发送至群组 {group_id}")
-            except Exception as e:
-                logger.error(f"发送至群组 {group_id} 失败: {e}")
-
-# 主函数（修正事件循环管理）
-async def main():
+# 主函数
+def main():
     port = int(os.getenv("PORT", "10000"))
     logger.info(f"Listening on port: {port}")
 
-    # 创建并初始化 Application 实例
     application = Application.builder().token(BOT_TOKEN).build()
-    await application.initialize()
 
-    # 添加处理程序
     application.add_handler(MessageHandler(telegram.ext.filters.TEXT, handle_message))
 
-    # 设置定时任务
     setup_schedule()
 
-    # 配置 Webhook URL
     external_url = os.getenv("RENDER_EXTERNAL_URL", "winpay-bot-repo.onrender.com").strip()
     if not external_url:
         logger.error("错误：RENDER_EXTERNAL_URL 未设置")
@@ -564,11 +601,9 @@ async def main():
     else:
         webhook_url = external_url + "/webhook"
     logger.info(f"设置 Webhook URL: {webhook_url}")
-
     try:
         logger.info("尝试启动 Webhook...")
-        # 使用 run_webhook 直接运行，无需外部 asyncio.run
-        await application.run_webhook(
+        application.run_webhook(
             listen="0.0.0.0",
             port=port,
             url_path="/webhook",
@@ -576,17 +611,6 @@ async def main():
         )
     except Exception as e:
         logger.error(f"Webhook 设置失败: {e}")
-    finally:
-        # 确保关闭 Application
-        await application.shutdown()
 
-# 运行主函数（移除 asyncio.run，使用现有循环）
 if __name__ == '__main__':
-    # 获取或创建事件循环
-    loop = asyncio.get_event_loop()
-    try:
-        loop.run_until_complete(main())
-    except KeyboardInterrupt:
-        pass
-    finally:
-        loop.close()
+    main()
