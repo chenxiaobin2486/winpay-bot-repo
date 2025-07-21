@@ -6,7 +6,7 @@ import time
 import re
 import os
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import pytz
 import random
 import string
@@ -25,6 +25,7 @@ is_accounting_enabled = {}  # {chat_id: bool}，控制记账状态，默认为 T
 team_groups = {}  # {队名: [群ID列表]}
 scheduled_tasks = {}  # {任务ID: {"team": 队名, "template": 模板名, "time": 任务时间}}
 last_file_id = {}  # {chat_id: 文件ID}
+last_file_message = {}  # {chat_id: {"file_id": str, "caption": str or None}}，记录最近文件消息
 templates = {}  # {模板名: {"message": 广告文, "file_id": 文件ID}}
 
 # 设置日志任务
@@ -157,8 +158,8 @@ async def send_broadcast(context, task):
 
 # 处理所有消息
 async def handle_message(update, context):
-    global operators, transactions, user_history, address_verify_count, is_accounting_enabled, exchange_rates, team_groups, scheduled_tasks, last_file_id, templates
-    message_text = update.message.text.strip()
+    global operators, transactions, user_history, address_verify_count, is_accounting_enabled, exchange_rates, team_groups, scheduled_tasks, last_file_id, last_file_message, templates
+    message_text = update.message.text.strip() if update.message.text else ""
     chat_id = str(update.message.chat_id)
     user_id = str(update.message.from_user.id)
     username = update.message.from_user.username
@@ -179,6 +180,8 @@ async def handle_message(update, context):
         is_accounting_enabled[chat_id] = True  # 默认启用记账
     if chat_id not in last_file_id:
         last_file_id[chat_id] = None
+    if chat_id not in last_file_message:
+        last_file_message[chat_id] = None
     if chat_id not in exchange_rates:
         exchange_rates[chat_id] = {"deposit": 1.0, "withdraw": 1.0, "deposit_fee": 0.0, "withdraw_fee": 0.0}
 
@@ -200,6 +203,30 @@ async def handle_message(update, context):
             )
             print(f"昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
         user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
+
+    # 私聊中处理文件消息
+    if update.message.chat.type == "private":
+        file_id = None
+        file_type = None
+        if update.message.animation:
+            file_id = update.message.animation.file_id
+            file_type = "动图"
+        elif update.message.document:
+            file_id = update.message.document.file_id
+            file_type = "视频"
+        elif update.message.photo and update.message.photo:
+            file_id = update.message.photo[-1].file_id
+            file_type = "图片"
+
+        if file_id:
+            print(f"收到文件消息，类型: {file_type}, 文件ID: {file_id}, 文本: {message_text or '无'}")
+            last_file_id[chat_id] = file_id
+            last_file_message[chat_id] = {"file_id": file_id, "caption": message_text or None}
+            try:
+                await update.message.reply_text(f"{file_type}文件 ID: {file_id}")
+            except Exception as e:
+                print(f"回复文件ID失败: {e}")
+                await update.message.reply_text("无法回复文件ID，请稍后重试")
 
     # 记账功能
     if message_text == "开始":
@@ -437,14 +464,6 @@ async def handle_message(update, context):
 
     # 群发功能（仅私聊有效）
     if update.message.chat.type == "private":
-        # 处理文件消息，获取文件 ID
-        if update.message.document or update.message.photo or update.message.animation:
-            file_id = (update.message.document.file_id if update.message.document 
-                      else update.message.photo[-1].file_id if update.message.photo 
-                      else update.message.animation.file_id)
-            last_file_id[chat_id] = file_id
-            await update.message.reply_text(f"文件 ID: {file_id}")
-
         # 显示群发说明
         if message_text == "群发说明":
             help_text = """
@@ -469,32 +488,41 @@ async def handle_message(update, context):
      - 结果：模板 `模板1` 记录广告文“欢迎体验我们的服务！”及相关文件 ID。  
    - 注意：若模板已存在，则覆盖原有内容。
 
-3. **创建群发任务**  
+3. **创建群发任务（通过模板）**  
    - 指令：`任务 队名 时间 模板名`  
    - 功能：为指定编队（队名）设置群发任务，使用指定模板的广告文和文件 ID，时间格式为 `HH:MM`（24小时制）。  
    - 示例：`任务 广告队 17:00 模板1`  
    - 结果：机器人生成唯一任务 ID（例如 `12345`），回复“任务已创建，任务 ID: 12345，请回复 `确认 12345` 执行”。  
    - 时间处理：以服务器时间（+07）为准，若时间已过当天自动调整为次日。
 
-4. **确认任务**  
+4. **创建群发任务（通过标记回复）**  
+   - 指令：回复包含文件（动图/视频/图片）的消息，使用 `任务 队名 时间`  
+   - 功能：以回复的文件消息（含广告文或无广告文）创建群发任务，自动生成临时模板。  
+   - 示例：  
+     - 发送一个 `.gif` 文件（可带广告文“欢迎体验”），机器人回复“动图文件 ID: abc123”。  
+     - 回复该“文件 ID”消息，输入 `任务 广告队 17:00`。  
+     - 结果：机器人生成任务 ID（例如 `12345`），回复“任务已创建，任务 ID: 12345，请回复 `确认 12345` 执行”。  
+   - 注意：必须回复机器人返回的“文件 ID”消息。
+
+5. **确认任务**  
    - 指令：`确认 任务ID`  
    - 功能：确认执行指定任务 ID 对应的群发任务。  
    - 示例：`确认 12345`  
    - 结果：任务按设定时间执行，向编队中的所有群组发送模板内容。
 
-5. **取消任务**  
+6. **取消任务**  
    - 指令：`任务 队名 -1`  
    - 功能：取消指定队名的待执行任务。  
    - 示例：`任务 广告队 -1`  
    - 结果：若存在对应队名的任务，则取消并回复“任务已取消”。
 
-6. **创建/更新编队**  
+7. **创建/更新编队**  
    - 指令：`编队 队名 群ID, 群ID`  
    - 功能：创建或更新指定队名对应的群组列表，使用逗号分隔多个群 ID。  
    - 示例：`编队 广告队 -1001234567890, -1009876543210`  
    - 结果：成功时回复“编队已更新”，若群 ID 无效则回复“任务目标有误请检查”。
 
-7. **从编队删除群组**  
+8. **从编队删除群组**  
    - 指令：`删除 队名 群ID, 群ID`  
    - 功能：从指定队名中删除一个或多个群 ID。  
    - 示例：`删除 广告队 -1001234567890`  
@@ -502,9 +530,10 @@ async def handle_message(update, context):
 
 ### 注意事项
 - **私聊限制**：以上指令仅在私聊与机器人对话时有效。
-- **文件支持**：支持动图（`.gif`）、视频（`.mp4`）和图片（`.jpg/.png`），需先在私聊发送文件以获取文件 ID。
+- **文件支持**：支持动图（`.gif`）、视频（`.mp4`）和图片（`.jpg/.png`），发送文件后自动返回文件 ID。
+- **标记回复**：通过回复“文件 ID”消息使用 `任务 队名 时间` 创建任务，自动使用回复的文件和广告文。
 - **时间调整**：若设定时间已过当天，自动调整为次日。
-- **错误处理**：编队不存在或群 ID 无效时，回复“任务目标有误请检查”。
+- **错误处理**：编队不存在、群 ID 无效或未回复文件消息时，回复“任务目标有误请检查”。
             """
             await update.message.reply_text(help_text)
 
@@ -525,7 +554,39 @@ async def handle_message(update, context):
 
         if message_text.startswith("任务 ") and not message_text.endswith("-1"):
             parts = message_text.split(" ", 3)
-            if len(parts) == 4 and parts[1] and parts[2] and parts[3]:
+            if len(parts) == 3 and parts[1] and parts[2]:  # 标记回复模式：任务 队名 时间
+                if update.message.reply_to_message:
+                    reply_message = update.message.reply_to_message
+                    if reply_message.from_user.is_bot and "文件 ID:" in reply_message.text:
+                        original_message = reply_message.reply_to_message
+                        if original_message and (original_message.document or original_message.photo or original_message.animation):
+                            file_id = (original_message.document.file_id if original_message.document 
+                                      else original_message.photo[-1].file_id if original_message.photo 
+                                      else original_message.animation.file_id)
+                            caption = original_message.caption or ""
+                            team_name, time_str = parts[1], parts[2]
+                            if team_name in team_groups:
+                                try:
+                                    current_time = datetime.now(pytz.timezone("Asia/Bangkok"))
+                                    scheduled_time = current_time.replace(hour=int(time_str.split(":")[0]), minute=int(time_str.split(":")[1]), second=0, microsecond=0)
+                                    if scheduled_time < current_time:
+                                        scheduled_time += timedelta(days=1)
+                                    task_id = ''.join(random.choices(string.ascii_letters + string.digits, k=5))
+                                    temp_template_name = f"temp_{task_id}"
+                                    templates[temp_template_name] = {"message": caption, "file_id": file_id}
+                                    scheduled_tasks[task_id] = {"team": team_name, "template": temp_template_name, "time": scheduled_time}
+                                    await update.message.reply_text(f"任务已创建，任务 ID: {task_id}，请回复 `确认 {task_id}` 执行")
+                                except (ValueError, IndexError):
+                                    await update.message.reply_text("时间格式错误，请使用 HH:MM，例如 17:00")
+                            else:
+                                await update.message.reply_text("任务目标有误，请检查队名")
+                        else:
+                            await update.message.reply_text("请回复包含动图、视频或图片的文件 ID 消息")
+                    else:
+                        await update.message.reply_text("请回复机器人返回的‘文件 ID’消息")
+                else:
+                    await update.message.reply_text("请回复包含动图、视频或图片的文件 ID 消息")
+            elif len(parts) == 4 and parts[1] and parts[2] and parts[3]:  # 现有模板模式：任务 队名 时间 模板名
                 team_name, time_str, template_name = parts[1], parts[2], parts[3]
                 try:
                     current_time = datetime.now(pytz.timezone("Asia/Bangkok"))
@@ -537,6 +598,8 @@ async def handle_message(update, context):
                     await update.message.reply_text(f"任务已创建，任务 ID: {task_id}，请回复 `确认 {task_id}` 执行")
                 except (ValueError, IndexError):
                     await update.message.reply_text("时间格式错误，请使用 HH:MM，例如 17:00")
+            else:
+                await update.message.reply_text("使用格式：任务 队名 时间 [模板名] 或回复文件 ID 消息使用 任务 队名 时间")
 
         if message_text.startswith("确认 "):
             task_id = message_text.replace("确认 ", "").strip()
@@ -605,7 +668,7 @@ def main():
     application = Application.builder().token(BOT_TOKEN).build()
 
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
-    application.add_handler(MessageHandler(telegram.ext.filters.TEXT, handle_message))
+    application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.DOCUMENT | filters.ANIMATION, handle_message))
 
     setup_schedule()
 
