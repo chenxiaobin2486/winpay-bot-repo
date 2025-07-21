@@ -468,7 +468,7 @@ async def handle_text(update, context):
 
     elif message_text == "日切" and username == initial_admin_username:
         if username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
-            logger.info(f"匹配到 '日切' 指令, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_id})")
+            logger.info(f"匹配到 '日切' 指令, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
             transactions[chat_id].clear()
             await update.message.reply_text("交易记录已清空")
 
@@ -654,37 +654,12 @@ async def handle_text(update, context):
             else:
                 await update.message.reply_text("使用格式：删除 队名 群ID, 群ID")
 
-# 重试设置Webhook的函数
-async def set_webhook_with_retry(application, webhook_url, max_retries=5, initial_delay=1):
-    for attempt in range(max_retries):
-        try:
-            await application.bot.set_webhook(url=webhook_url)
-            logger.info(f"Webhook 设置成功: {webhook_url}")
-            return True
-        except Exception as e:
-            if "Flood control exceeded" in str(e):
-                delay = initial_delay * (2 ** attempt)  # 指数退避
-                logger.warning(f"洪水控制触发，重试 {attempt + 1}/{max_retries}，等待 {delay} 秒")
-                await asyncio.sleep(delay)
-            else:
-                logger.error(f"Webhook 设置失败: {e}")
-                return False
-    logger.error(f"Webhook 设置失败，达到最大重试次数 {max_retries}")
-    return False
-
 # 主函数
 async def main():
     port = int(os.getenv("PORT", "10000"))
     logger.info(f"监听端口: {port}")
 
     application = Application.builder().token(BOT_TOKEN).build()
-
-    # 检查 Webhook 状态
-    try:
-        webhook_info = await application.bot.get_webhook_info()
-        logger.info(f"当前 Webhook 状态: {webhook_info}")
-    except Exception as e:
-        logger.error(f"获取 Webhook 状态失败: {e}")
 
     # 添加消息处理程序
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
@@ -703,6 +678,14 @@ async def main():
 
     setup_schedule()
 
+    # 检查 Webhook 状态
+    try:
+        webhook_info = await application.bot.get_webhook_info()
+        logger.info(f"当前 Webhook 状态: {webhook_info}")
+    except Exception as e:
+        logger.error(f"获取 Webhook 状态失败: {e}")
+
+    # 设置 Webhook，单次重试处理429
     external_url = os.getenv("RENDER_EXTERNAL_URL", "winpay-bot-repo.onrender.com").strip()
     if not external_url:
         logger.error("错误：RENDER_EXTERNAL_URL 未设置")
@@ -713,33 +696,45 @@ async def main():
         webhook_url = external_url + "/webhook"
     logger.info(f"设置 Webhook URL: {webhook_url}")
 
-    # 设置 Webhook，带重试机制
-    if await set_webhook_with_retry(application, webhook_url):
-        try:
-            logger.info("尝试启动 Webhook...")
-            await application.run_webhook(
-                listen="0.0.0.0",
-                port=port,
-                url_path="/webhook",
-                webhook_url=webhook_url,
-                drop_pending_updates=True
-            )
-            logger.info("Webhook 启动成功")
-        except Exception as e:
-            logger.error(f"Webhook 启动失败: {e}")
-            raise
-    else:
-        logger.error("无法设置 Webhook，程序退出")
-        raise RuntimeError("Webhook 设置失败")
+    try:
+        await application.bot.set_webhook(url=webhook_url)
+        logger.info(f"Webhook 设置成功: {webhook_url}")
+    except Exception as e:
+        if "Flood control exceeded" in str(e):
+            logger.warning("洪水控制触发，等待 5 秒后重试")
+            await asyncio.sleep(5)
+            try:
+                await application.bot.set_webhook(url=webhook_url)
+                logger.info(f"Webhook 重试设置成功: {webhook_url}")
+            except Exception as e2:
+                logger.error(f"Webhook 重试设置失败: {e2}")
+                return
+        else:
+            logger.error(f"Webhook 设置失败: {e}")
+            return
+
+    # 启动 Webhook
+    try:
+        logger.info("尝试启动 Webhook...")
+        await application.run_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path="/webhook",
+            webhook_url=webhook_url,
+            drop_pending_updates=True
+        )
+        logger.info("Webhook 启动成功")
+    except Exception as e:
+        logger.error(f"Webhook 启动失败: {e}")
+        raise
 
 # 主程序入口
 if __name__ == '__main__':
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
     try:
+        asyncio.run(main())
+    except RuntimeError as e:
+        logger.error(f"主程序运行失败: {e}")
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         loop.run_until_complete(main())
         loop.run_forever()
-    except Exception as e:
-        logger.error(f"主程序运行失败: {e}")
-    finally:
-        loop.close()
