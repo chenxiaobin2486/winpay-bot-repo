@@ -229,6 +229,20 @@ async def handle_message(update, context):
                 print(f"回复文件ID失败: {e}")
                 await update.message.reply_text("无法回复文件ID，请稍后重试")
 
+    # 编队列表指令
+    if message_text == "编队列表" and update.message.chat.type == "private":
+        print("匹配到 '编队列表' 指令")
+        if username and (username in operators.get(chat_id, {}) or username == initial_admin_username):
+            if team_groups:
+                response = "编队列表：\n" + "\n".join(f"{team}: {', '.join(groups)}" for team, groups in sorted(team_groups.items()))
+            else:
+                response = "无编队"
+            print(f"编队列表响应: {response}")
+            await update.message.reply_text(response)
+        else:
+            await update.message.reply_text("仅操作员可查看编队列表")
+        return
+
     # 记账功能
     if message_text == "开始":
         if username and username in operators.get(chat_id, {}):
@@ -538,128 +552,165 @@ async def handle_message(update, context):
             """
             await update.message.reply_text(help_text)
 
+        # 编队指令
+        if message_text.startswith("编队 "):
+            parts = message_text.split(" ", 2)
+            if len(parts) == 3 and parts[1] and parts[2]:
+                team_name = parts[1]
+                if username and (username in operators.get(chat_id, {}) or username == initial_admin_username):
+                    try:
+                        group_ids = [gid.strip() for gid in re.split(r'[,，]', parts[2]) if gid.strip()]
+                        if not group_ids:
+                            raise ValueError("群ID列表为空")
+                        for gid in group_ids:
+                            if not gid.startswith("-") or not gid[1:].isdigit():
+                                raise ValueError(f"无效群ID: {gid}")
+                        team_groups[team_name] = list(set(team_groups.get(team_name, []) + group_ids))
+                        print(f"编队输入: 队名={team_name}, 群ID={group_ids}")
+                        await update.message.reply_text(f"编队已更新: {team_name}，包含群组: {', '.join(group_ids)}")
+                    except ValueError as e:
+                        print(f"编队解析失败: {e}")
+                        await update.message.reply_text(f"任务目标有误请检查: {e}")
+                else:
+                    await update.message.reply_text("仅操作员可执行此操作")
+            else:
+                await update.message.reply_text("使用格式：编队 队名 群ID,群ID")
+            return
+
+        # 删除编队群组
+        if message_text.startswith("删除 "):
+            parts = message_text.split(" ", 2)
+            if len(parts) == 3 and parts[1] and parts[2]:
+                team_name = parts[1]
+                if username and (username in operators.get(chat_id, {}) or username == initial_admin_username):
+                    try:
+                        group_ids = [gid.strip() for gid in re.split(r'[,，]', parts[2]) if gid.strip()]
+                        if not group_ids:
+                            raise ValueError("群ID列表为空")
+                        if team_name in team_groups:
+                            for gid in group_ids:
+                                if gid in team_groups[team_name]:
+                                    team_groups[team_name].remove(gid)
+                            if not team_groups[team_name]:
+                                del team_groups[team_name]
+                            print(f"删除群组: 队名={team_name}, 群ID={group_ids}")
+                            await update.message.reply_text("群组已从编队移除")
+                        else:
+                            await update.message.reply_text("任务目标有误请检查: 编队不存在")
+                    except ValueError as e:
+                        print(f"删除解析失败: {e}")
+                        await update.message.reply_text(f"任务目标有误请检查: {e}")
+                else:
+                    await update.message.reply_text("仅操作员可执行此操作")
+            else:
+                await update.message.reply_text("使用格式：删除 队名 群ID,群ID")
+            return
+
         # 其余群发逻辑
         if message_text.startswith("编辑 "):
             parts = message_text.split(" ", 2)
             if len(parts) == 3 and parts[1] and parts[2]:
                 template_name = parts[1]
                 message = parts[2]
-                file_id = last_file_id.get(chat_id)
-                if file_id:
-                    templates[template_name] = {"message": message, "file_id": file_id}
-                    await update.message.reply_text(f"模板 {template_name} 已更新")
+                if username and (username in operators.get(chat_id, {}) or username == initial_admin_username):
+                    file_id = last_file_id.get(chat_id)
+                    if file_id:
+                        templates[template_name] = {"message": message, "file_id": file_id}
+                        await update.message.reply_text(f"模板 {template_name} 已更新")
+                    else:
+                        await update.message.reply_text("请先发送动图、视频或图片以获取文件 ID")
                 else:
-                    await update.message.reply_text("请先发送动图、视频或图片以获取文件 ID")
+                    await update.message.reply_text("仅操作员可执行此操作")
             else:
                 await update.message.reply_text("使用格式：编辑 模板名 广告文")
 
         if message_text.startswith("任务 ") and not message_text.endswith("-1"):
             parts = message_text.split(" ", 3)
             if len(parts) == 3 and parts[1] and parts[2]:  # 标记回复模式：任务 队名 时间
-                if update.message.reply_to_message:
-                    reply_message = update.message.reply_to_message
-                    if reply_message.from_user.is_bot and "文件 ID:" in reply_message.text:
-                        original_message = reply_message.reply_to_message
-                        if original_message and (original_message.document or original_message.photo or original_message.animation):
-                            file_id = (original_message.document.file_id if original_message.document 
-                                      else original_message.photo[-1].file_id if original_message.photo 
-                                      else original_message.animation.file_id)
-                            caption = original_message.caption or ""
-                            team_name, time_str = parts[1], parts[2]
-                            if team_name in team_groups:
-                                try:
-                                    current_time = datetime.now(pytz.timezone("Asia/Bangkok"))
-                                    scheduled_time = current_time.replace(hour=int(time_str.split(":")[0]), minute=int(time_str.split(":")[1]), second=0, microsecond=0)
-                                    if scheduled_time < current_time:
-                                        scheduled_time += timedelta(days=1)
-                                    task_id = ''.join(random.choices(string.ascii_letters + string.digits, k=5))
-                                    temp_template_name = f"temp_{task_id}"
-                                    templates[temp_template_name] = {"message": caption, "file_id": file_id}
-                                    scheduled_tasks[task_id] = {"team": team_name, "template": temp_template_name, "time": scheduled_time}
-                                    await update.message.reply_text(f"任务已创建，任务 ID: {task_id}，请回复 `确认 {task_id}` 执行")
-                                except (ValueError, IndexError):
-                                    await update.message.reply_text("时间格式错误，请使用 HH:MM，例如 17:00")
+                if username and (username in operators.get(chat_id, {}) or username == initial_admin_username):
+                    if update.message.reply_to_message:
+                        reply_message = update.message.reply_to_message
+                        if reply_message.from_user.is_bot and "文件 ID:" in reply_message.text:
+                            original_message = reply_message.reply_to_message
+                            if original_message and (original_message.document or original_message.photo or original_message.animation):
+                                file_id = (original_message.document.file_id if original_message.document 
+                                          else original_message.photo[-1].file_id if original_message.photo 
+                                          else original_message.animation.file_id)
+                                caption = original_message.caption or ""
+                                team_name, time_str = parts[1], parts[2]
+                                if team_name in team_groups:
+                                    try:
+                                        current_time = datetime.now(pytz.timezone("Asia/Bangkok"))
+                                        scheduled_time = current_time.replace(hour=int(time_str.split(":")[0]), minute=int(time_str.split(":")[1]), second=0, microsecond=0)
+                                        if scheduled_time < current_time:
+                                            scheduled_time += timedelta(days=1)
+                                        task_id = ''.join(random.choices(string.ascii_letters + string.digits, k=5))
+                                        temp_template_name = f"temp_{task_id}"
+                                        templates[temp_template_name] = {"message": caption, "file_id": file_id}
+                                        scheduled_tasks[task_id] = {"team": team_name, "template": temp_template_name, "time": scheduled_time}
+                                        await update.message.reply_text(f"任务已创建，任务 ID: {task_id}，请回复 `确认 {task_id}` 执行")
+                                    except (ValueError, IndexError):
+                                        await update.message.reply_text("时间格式错误，请使用 HH:MM，例如 17:00")
+                                else:
+                                    await update.message.reply_text("任务目标有误，请检查队名")
                             else:
-                                await update.message.reply_text("任务目标有误，请检查队名")
+                                await update.message.reply_text("请回复包含动图、视频或图片的文件 ID 消息")
                         else:
-                            await update.message.reply_text("请回复包含动图、视频或图片的文件 ID 消息")
+                            await update.message.reply_text("请回复机器人返回的‘文件 ID’消息")
                     else:
-                        await update.message.reply_text("请回复机器人返回的‘文件 ID’消息")
+                        await update.message.reply_text("请回复包含动图、视频或图片的文件 ID 消息")
                 else:
-                    await update.message.reply_text("请回复包含动图、视频或图片的文件 ID 消息")
+                    await update.message.reply_text("仅操作员可执行此操作")
             elif len(parts) == 4 and parts[1] and parts[2] and parts[3]:  # 现有模板模式：任务 队名 时间 模板名
-                team_name, time_str, template_name = parts[1], parts[2], parts[3]
-                try:
-                    current_time = datetime.now(pytz.timezone("Asia/Bangkok"))
-                    scheduled_time = current_time.replace(hour=int(time_str.split(":")[0]), minute=int(time_str.split(":")[1]), second=0, microsecond=0)
-                    if scheduled_time < current_time:
-                        scheduled_time += timedelta(days=1)
-                    task_id = ''.join(random.choices(string.ascii_letters + string.digits, k=5))
-                    scheduled_tasks[task_id] = {"team": team_name, "template": template_name, "time": scheduled_time}
-                    await update.message.reply_text(f"任务已创建，任务 ID: {task_id}，请回复 `确认 {task_id}` 执行")
-                except (ValueError, IndexError):
-                    await update.message.reply_text("时间格式错误，请使用 HH:MM，例如 17:00")
+                if username and (username in operators.get(chat_id, {}) or username == initial_admin_username):
+                    team_name, time_str, template_name = parts[1], parts[2], parts[3]
+                    try:
+                        current_time = datetime.now(pytz.timezone("Asia/Bangkok"))
+                        scheduled_time = current_time.replace(hour=int(time_str.split(":")[0]), minute=int(time_str.split(":")[1]), second=0, microsecond=0)
+                        if scheduled_time < current_time:
+                            scheduled_time += timedelta(days=1)
+                        task_id = ''.join(random.choices(string.ascii_letters + string.digits, k=5))
+                        scheduled_tasks[task_id] = {"team": team_name, "template": template_name, "time": scheduled_time}
+                        await update.message.reply_text(f"任务已创建，任务 ID: {task_id}，请回复 `确认 {task_id}` 执行")
+                    except (ValueError, IndexError):
+                        await update.message.reply_text("时间格式错误，请使用 HH:MM，例如 17:00")
+                else:
+                    await update.message.reply_text("仅操作员可执行此操作")
             else:
                 await update.message.reply_text("使用格式：任务 队名 时间 [模板名] 或回复文件 ID 消息使用 任务 队名 时间")
 
         if message_text.startswith("确认 "):
-            task_id = message_text.replace("确认 ", "").strip()
-            if task_id in scheduled_tasks:
-                task = scheduled_tasks[task_id]
-                team_name, template_name = task["team"], task["template"]
-                if team_name in team_groups and template_name in templates:
-                    schedule.every().day.at(task["time"].strftime("%H:%M")).do(
-                        lambda t=task: asyncio.run(send_broadcast(context, t))
-                    ).tag(task_id)
-                    await update.message.reply_text(f"任务 {task_id} 已计划，等待执行")
-                    del scheduled_tasks[task_id]  # 移除待确认任务
+            if username and (username in operators.get(chat_id, {}) or username == initial_admin_username):
+                task_id = message_text.replace("确认 ", "").strip()
+                if task_id in scheduled_tasks:
+                    task = scheduled_tasks[task_id]
+                    team_name, template_name = task["team"], task["template"]
+                    if team_name in team_groups and template_name in templates:
+                        schedule.every().day.at(task["time"].strftime("%H:%M")).do(
+                            lambda t=task: asyncio.run(send_broadcast(context, t))
+                        ).tag(task_id)
+                        await update.message.reply_text(f"任务 {task_id} 已计划，等待执行")
+                        del scheduled_tasks[task_id]  # 移除待确认任务
+                    else:
+                        await update.message.reply_text("任务目标有误请检查")
                 else:
-                    await update.message.reply_text("任务目标有误请检查")
+                    await update.message.reply_text("无效的任务 ID")
             else:
-                await update.message.reply_text("无效的任务 ID")
+                await update.message.reply_text("仅操作员可执行此操作")
 
         if message_text.startswith("任务 ") and message_text.endswith("-1"):
-            team_name = message_text.replace("任务 ", "").replace("-1", "").strip()
-            for task_id, task in list(scheduled_tasks.items()):
-                if task["team"] == team_name:
-                    schedule.clear(task_id)
-                    del scheduled_tasks[task_id]
-                    await update.message.reply_text("任务已取消")
-                    break
-            else:
-                await update.message.reply_text("无此队名的待执行任务")
-
-        if message_text.startswith("编队 "):
-            parts = message_text.split(" ", 2)
-            if len(parts) == 3 and parts[1] and parts[2]:
-                team_name = parts[1]
-                group_ids = [gid.strip() for gid in parts[2].split(",") if gid.strip()]
-                try:
-                    for gid in group_ids:
-                        int(gid)  # 验证群 ID 是否为整数
-                    team_groups[team_name] = group_ids
-                    await update.message.reply_text("编队已更新")
-                except ValueError:
-                    await update.message.reply_text("任务目标有误请检查")
-            else:
-                await update.message.reply_text("使用格式：编队 队名 群ID, 群ID")
-
-        if message_text.startswith("删除 "):
-            parts = message_text.split(" ", 2)
-            if len(parts) == 3 and parts[1] and parts[2]:
-                team_name = parts[1]
-                group_ids = [gid.strip() for gid in parts[2].split(",") if gid.strip()]
-                if team_name in team_groups:
-                    for gid in group_ids:
-                        if gid in team_groups[team_name]:
-                            team_groups[team_name].remove(gid)
-                    if not team_groups[team_name]:
-                        del team_groups[team_name]
-                    await update.message.reply_text("群组已从编队移除")
+            if username and (username in operators.get(chat_id, {}) or username == initial_admin_username):
+                team_name = message_text.replace("任务 ", "").replace("-1", "").strip()
+                for task_id, task in list(scheduled_tasks.items()):
+                    if task["team"] == team_name:
+                        schedule.clear(task_id)
+                        del scheduled_tasks[task_id]
+                        await update.message.reply_text("任务已取消")
+                        break
                 else:
-                    await update.message.reply_text("任务目标有误请检查")
+                    await update.message.reply_text("无此队名的待执行任务")
             else:
-                await update.message.reply_text("使用格式：删除 队名 群ID, 群ID")
+                await update.message.reply_text("仅操作员可执行此操作")
 
 # 主函数
 def main():
