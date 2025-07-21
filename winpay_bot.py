@@ -1,12 +1,11 @@
 # 导入必要的模块
 from telegram.ext import Application, MessageHandler, filters
-import telegram.ext
 import schedule
 import time
 import re
 import os
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import pytz
 import random
 import string
@@ -123,7 +122,7 @@ def format_exchange_rate(rate):
     return formatted
 
 # 欢迎新成员
-async def welcome_new_member(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+async def welcome_new_member(update, context):
     chat_id = str(update.message.chat_id)
     if chat_id not in user_history:
         user_history[chat_id] = {}
@@ -614,9 +613,9 @@ def main():
 
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
     application.add_handler(MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, handle_photo))
-    application.add_handler(MessageHandler(filters.ANIMATION & filters.PRIVATE, handle_animation))
-    application.add_handler(MessageHandler(filters.VIDEO & filters.PRIVATE, handle_video))
-    application.add_handler(MessageHandler(telegram.ext.filters.TEXT, handle_text))
+    application.add_handler(MessageHandler(filters.ANIMATION & filters.ChatType.PRIVATE, handle_animation))
+    application.add_handler(MessageHandler(filters.VIDEO & filters.ChatType.PRIVATE, handle_video))
+    application.add_handler(MessageHandler(filters.TEXT, handle_text))
 
     setup_schedule()
 
