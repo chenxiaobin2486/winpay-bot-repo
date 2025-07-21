@@ -341,34 +341,37 @@ async def handle_message(update, context):
             if update.message.reply_to_message:
                 original_message = update.message.reply_to_message.text.strip()
                 print(f"尝试删除，原始消息: '{original_message}'")
+                print(f"当前交易记录: {transactions.get(chat_id, [])}")
                 if original_message.startswith("+") and not original_message == "+0":
-                    amount_str = original_message.replace("+", "").strip()
-                    amount = float(amount_str.rstrip('uU'))
-                    has_u = amount_str.lower().endswith('u')
-                    for t in transactions[chat_id][:]:
-                        if t.startswith("入款"):
-                            t_parts = t.split(" -> ")[0].split()
-                            t_amount_str = t_parts[1].rstrip('u')
-                            t_amount = float(t_amount_str)
-                            t_has_u = t_amount_str.endswith('u')
-                            if t_amount == amount and has_u == t_has_u:
-                                transactions[chat_id].remove(t)
-                                await update.message.reply_text(f"入款 {format_amount(amount)}{'u' if has_u else ''} 已被撤销")
-                                return
+                    amount_match = re.search(r'\+(\d+\.?\d*)[uU]?', original_message)
+                    if amount_match:
+                        amount = float(amount_match.group(1))
+                        has_u = 'u' in original_message.lower()
+                        for t in transactions[chat_id][:]:
+                            if t.startswith("入款"):
+                                t_parts = t.split(" -> ")[0].split()
+                                t_amount_str = t_parts[1].rstrip('u')
+                                t_amount = float(t_amount_str)
+                                t_has_u = t_amount_str.endswith('u')
+                                if t_amount == amount and has_u == t_has_u:
+                                    transactions[chat_id].remove(t)
+                                    await update.message.reply_text(f"入款 {format_amount(amount)}{'u' if has_u else ''} 已被撤销")
+                                    return
                 elif original_message.startswith("下发"):
-                    amount_str = original_message.replace("下发", "").strip().split()[0]  # 提取金额部分
-                    amount = float(amount_str.rstrip('uU'))
-                    has_u = amount_str.lower().endswith('u')
-                    for t in transactions[chat_id][:]:
-                        if t.startswith("下发"):
-                            t_parts = t.split(" -> ")[0].split()
-                            t_amount_str = t_parts[1].rstrip('u')
-                            t_amount = float(t_amount_str)
-                            t_has_u = t_amount_str.endswith('u')
-                            if t_amount == amount and has_u == t_has_u:
-                                transactions[chat_id].remove(t)
-                                await update.message.reply_text(f"下发 {format_amount(amount)}{'u' if has_u else ''} 已被撤销")
-                                return
+                    amount_match = re.search(r'下发\s*(\d+\.?\d*)[uU]?', original_message)
+                    if amount_match:
+                        amount = float(amount_match.group(1))
+                        has_u = 'u' in original_message.lower().split()[1] if len(original_message.split()) > 1 else False
+                        for t in transactions[chat_id][:]:
+                            if t.startswith("下发"):
+                                t_parts = t.split(" -> ")[0].split()
+                                t_amount_str = t_parts[1].rstrip('u')
+                                t_amount = float(t_amount_str)
+                                t_has_u = t_amount_str.endswith('u')
+                                if t_amount == amount and has_u == t_has_u:
+                                    transactions[chat_id].remove(t)
+                                    await update.message.reply_text(f"下发 {format_amount(amount)}{'u' if has_u else ''} 已被撤销")
+                                    return
                 await update.message.reply_text("无法撤销此消息，请确保回复正确的入款或下发记录")
             else:
                 await update.message.reply_text("请回复目标交易相关消息以删除")
@@ -509,7 +512,8 @@ async def handle_message(update, context):
                         await update.message.reply_text("请回复包含动图或视频的消息")
             elif message_text == "群发说明":
                 print("匹配到 '群发说明' 指令")
-                help_text = """
+                if username in operators.get(chat_id, {}):
+                    help_text = """
 群发相关指令：
 编队 (队名) 群ID,群ID        - 创建或覆盖指定队的群组
 (队名) 添加 群ID,群ID        - 向指定队添加群组
@@ -519,8 +523,10 @@ async def handle_message(update, context):
 查询群发                      - 查看当前所有群发设置
 预览                          - 查看当前广告内容预览
 ID                            - 回复动图/视频消息获取文件 ID
-                """
-                await update.message.reply_text(help_text)
+                    """
+                    await update.message.reply_text(help_text)
+                else:
+                    await update.message.reply_text("您没有权限查看群发说明")
 
 # 主函数
 def main():
