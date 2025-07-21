@@ -518,7 +518,7 @@ async def handle_message(update, context):
    - 指令：`任务 队名 时间 模板名`  
    - 功能：为指定编队（队名）设置群发任务，使用指定模板的广告文和文件 ID，时间格式为 `HH:MM`（24小时制）。  
    - 示例：`任务 广告队 17:00 模板1`  
-   - 结果：机器人生成唯一任务 ID（例如 `12345`），回复“任务已创建，任务 ID: 12345，请回复 `确认 12345` 执行”。  
+   - 结果：机器人生成唯一任务 ID（例如 `12345`），将在指定时间执行。  
    - 时间处理：以服务器时间（+07）为准，若时间已过当天自动调整为次日。
 
 4. **创建群发任务（通过标记回复）**  
@@ -527,20 +527,20 @@ async def handle_message(update, context):
    - 示例：  
      - 发送一个 `.gif` 文件（可带广告文“欢迎体验”），机器人回复“动图文件 ID: abc123”。  
      - 回复该“文件 ID”消息，输入 `任务 广告队 17:00`。  
-     - 结果：机器人生成任务 ID（例如 `12345`），回复“任务已创建，任务 ID: 12345，请回复 `确认 12345` 执行”。  
+     - 结果：机器人生成任务 ID（例如 `12345`），将在指定时间执行。  
    - 注意：必须回复机器人返回的“文件 ID”消息。
 
-5. **确认任务**  
-   - 指令：`确认 任务ID`  
-   - 功能：确认执行指定任务 ID 对应的群发任务。  
-   - 示例：`确认 12345`  
-   - 结果：任务按设定时间执行，向编队中的所有群组发送模板内容。
-
-6. **取消任务**  
+5. **取消任务**  
    - 指令：`任务 队名 -1`  
    - 功能：取消指定队名的待执行任务。  
    - 示例：`任务 广告队 -1`  
    - 结果：若存在对应队名的任务，则取消并回复“任务已取消”。
+
+6. **查看任务列表**  
+   - 指令：`任务列表`  
+   - 功能：显示所有待执行任务，包括任务ID、队名和执行时间。  
+   - 示例：`任务列表`  
+   - 结果：返回格式如“任务 ID: 12345, 队名: 广告队, 时间: 17:00”。
 
 7. **创建/更新编队**  
    - 指令：`编队 队名 群ID, 群ID`  
@@ -658,7 +658,10 @@ async def handle_message(update, context):
                                     temp_template_name = f"temp_{task_id}"
                                     templates[temp_template_name] = {"message": caption, "file_id": file_id}
                                     scheduled_tasks[task_id] = {"team": team_name, "template": temp_template_name, "time": scheduled_time}
-                                    await update.message.reply_text(f"任务已创建，任务 ID: {task_id}，请回复 `确认 {task_id}` 执行")
+                                    schedule.every().day.at(scheduled_time.strftime("%H:%M")).do(
+                                        lambda t=task_id: asyncio.run(send_broadcast(context, scheduled_tasks[t]))
+                                    ).tag(task_id)
+                                    await update.message.reply_text(f"任务已创建，任务 ID: {task_id}，将在 {scheduled_time.strftime('%H:%M')} 执行")
                                 except (ValueError, IndexError):
                                     await update.message.reply_text("时间格式错误，请使用 HH:MM，例如 17:00")
                             else:
@@ -677,32 +680,16 @@ async def handle_message(update, context):
                             scheduled_time += timedelta(days=1)
                         task_id = ''.join(random.choices(string.ascii_letters + string.digits, k=5))
                         scheduled_tasks[task_id] = {"team": team_name, "template": template_name, "time": scheduled_time}
-                        await update.message.reply_text(f"任务已创建，任务 ID: {task_id}，请回复 `确认 {task_id}` 执行")
+                        schedule.every().day.at(scheduled_time.strftime("%H:%M")).do(
+                            lambda t=task_id: asyncio.run(send_broadcast(context, scheduled_tasks[t]))
+                        ).tag(task_id)
+                        await update.message.reply_text(f"任务已创建，任务 ID: {task_id}，将在 {scheduled_time.strftime('%H:%M')} 执行")
                     except (ValueError, IndexError):
                         await update.message.reply_text("时间格式错误，请使用 HH:MM，例如 17:00")
                 else:
                     await update.message.reply_text(f"仅操作员可执行此操作，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
             else:
                 await update.message.reply_text("使用格式：任务 队名 时间 [模板名] 或回复文件 ID 消息使用 任务 队名 时间")
-
-        if message_text.startswith("确认 "):
-            if username and (username in global_operators or username == initial_admin_username):
-                task_id = message_text.replace("确认 ", "").strip()
-                if task_id in scheduled_tasks:
-                    task = scheduled_tasks[task_id]
-                    team_name, template_name = task["team"], task["template"]
-                    if team_name in team_groups and template_name in templates:
-                        schedule.every().day.at(task["time"].strftime("%H:%M")).do(
-                            lambda t=task: asyncio.run(send_broadcast(context, t))
-                        ).tag(task_id)
-                        await update.message.reply_text(f"任务 {task_id} 已计划，等待执行")
-                        del scheduled_tasks[task_id]  # 移除待确认任务
-                    else:
-                        await update.message.reply_text("任务目标有误请检查")
-                else:
-                    await update.message.reply_text("无效的任务 ID")
-            else:
-                await update.message.reply_text(f"仅操作员可执行此操作，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
 
         if message_text.startswith("任务 ") and message_text.endswith("-1"):
             if username and (username in global_operators or username == initial_admin_username):
@@ -717,6 +704,19 @@ async def handle_message(update, context):
                     await update.message.reply_text("无此队名的待执行任务")
             else:
                 await update.message.reply_text(f"仅操作员可执行此操作，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
+
+        elif message_text == "任务列表" and update.message.chat.type == "private":
+            if username and (username in global_operators or username == initial_admin_username):
+                if scheduled_tasks:
+                    response = "待执行任务列表：\n" + "\n".join(
+                        f"任务 ID: {task_id}, 队名: {task['team']}, 时间: {task['time'].strftime('%H:%M')}"
+                        for task_id, task in scheduled_tasks.items()
+                    )
+                else:
+                    response = "无待执行任务"
+                await update.message.reply_text(response)
+            else:
+                await update.message.reply_text(f"仅操作员可查看任务列表，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
 
 # 主函数
 def main():
