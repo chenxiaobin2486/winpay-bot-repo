@@ -46,7 +46,7 @@ async def handle_bill(update, context):
         for t in reversed([t for t in recent_transactions if t.startswith("入款")]):
             parts = t.split(" -> ")
             timestamp = parts[0].split()[2]
-            operator = parts[1].split(" (由 ")[1].rstrip(")")
+            operator = parts[1].split(" (")[1].rstrip(")")
             if "u" in parts[0]:
                 amount = float(parts[0].split()[1].rstrip('u'))
                 bill += f"{timestamp}  {format_amount(amount)}u ({operator})\n"
@@ -64,7 +64,7 @@ async def handle_bill(update, context):
         for t in reversed([t for t in recent_transactions if t.startswith("下发")]):
             parts = t.split(" -> ")
             timestamp = parts[0].split()[2]
-            operator = parts[1].split(" (由 ")[1].rstrip(")")
+            operator = parts[1].split(" (")[1].rstrip(")")
             if "u" in parts[0]:
                 amount = float(parts[0].split()[1].rstrip('u'))
                 bill += f"{timestamp}  {format_amount(amount)}u ({operator})\n"
@@ -338,7 +338,7 @@ async def handle_message(update, context):
         if username and username in operators.get(chat_id, {}):
             print("匹配到 '删除账单' 指令")
             transactions[chat_id].clear()
-            await update.message.reply_text("本日已清账💰，重新开始记账")
+            await update.message.reply_text("今日已清账💰，重新开始记账")
     elif message_text == "日切" and username == initial_admin_username:
         if username in operators.get(chat_id, {}):
             print("匹配到 '日切' 指令")
