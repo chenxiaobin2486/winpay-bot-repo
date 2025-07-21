@@ -152,8 +152,32 @@ async def send_broadcast(context, task):
             except Exception as e:
                 print(f"发送至群组 {group_id} 失败: {e}")
 
-# 处理所有消息
-async def handle_message(update, context):
+# 处理图片消息
+async def handle_photo(update, context):
+    chat_id = str(update.message.chat_id)
+    if update.message.chat.type == "private":
+        file_id = update.message.photo[-1].file_id
+        last_file_id[chat_id] = file_id
+        await update.message.reply_text(f"图片文件 ID: {file_id}")
+
+# 处理动画消息（动图）
+async def handle_animation(update, context):
+    chat_id = str(update.message.chat_id)
+    if update.message.chat.type == "private":
+        file_id = update.message.animation.file_id
+        last_file_id[chat_id] = file_id
+        await update.message.reply_text(f"动图文件 ID: {file_id}")
+
+# 处理视频消息
+async def handle_video(update, context):
+    chat_id = str(update.message.chat_id)
+    if update.message.chat.type == "private":
+        file_id = update.message.video.file_id
+        last_file_id[chat_id] = file_id
+        await update.message.reply_text(f"视频文件 ID: {file_id}")
+
+# 处理所有文本消息
+async def handle_text(update, context):
     global exchange_rate_deposit, deposit_fee_rate, exchange_rate_withdraw, withdraw_fee_rate, operators, transactions, user_history, address_verify_count, is_accounting_enabled
     global team_groups, scheduled_tasks, last_file_id, templates
     message_text = update.message.text.strip()
@@ -196,14 +220,6 @@ async def handle_message(update, context):
             )
             print(f"昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
         user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
-
-    # 自动获取私聊文件 ID
-    if update.message.chat.type == "private" and (update.message.document or update.message.photo or update.message.animation):
-        file_id = (update.message.document.file_id if update.message.document 
-                  else update.message.photo[-1].file_id if update.message.photo 
-                  else update.message.animation.file_id)
-        last_file_id[chat_id] = file_id
-        await update.message.reply_text(f"自动获取文件 ID: {file_id}")
 
     # 记账功能
     if message_text == "开始":
@@ -437,14 +453,6 @@ async def handle_message(update, context):
 
     # 群发功能（仅私聊有效）
     if update.message.chat.type == "private":
-        # 处理文件消息，获取文件 ID
-        if update.message.document or update.message.photo or update.message.animation:
-            file_id = (update.message.document.file_id if update.message.document 
-                      else update.message.photo[-1].file_id if update.message.photo 
-                      else update.message.animation.file_id)
-            last_file_id[chat_id] = file_id
-            await update.message.reply_text(f"文件 ID: {file_id}")
-
         # 显示群发说明
         if message_text == "群发说明":
             help_text = """
@@ -605,7 +613,10 @@ def main():
     application = Application.builder().token(BOT_TOKEN).build()
 
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
-    application.add_handler(MessageHandler(telegram.ext.filters.TEXT, handle_message))
+    application.add_handler(MessageHandler(filters.PHOTO & filters.PRIVATE, handle_photo))
+    application.add_handler(MessageHandler(filters.ANIMATION & filters.PRIVATE, handle_animation))
+    application.add_handler(MessageHandler(filters.VIDEO & filters.PRIVATE, handle_video))
+    application.add_handler(MessageHandler(telegram.ext.filters.TEXT, handle_text))
 
     setup_schedule()
 
