@@ -64,7 +64,7 @@ async def handle_bill(update, context):
                 amount = float(parts[0].split()[1].rstrip('u'))
                 bill += f"{timestamp}  {format_amount(amount)}u ({operator})\n"
             else:
-                amount = float(parts[0].split()[1])
+                amount = float(parts[0].split()[1].rstrip('u'))
                 adjusted = float(parts[1].split()[0].rstrip('u'))
                 effective_rate = 1 - deposit_fee_rate
                 bill += f"{timestamp}  {format_amount(amount)}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_deposit)}={format_amount(adjusted)}u ({operator})\n"
@@ -82,7 +82,7 @@ async def handle_bill(update, context):
                 amount = float(parts[0].split()[1].rstrip('u'))
                 bill += f"{timestamp}  {format_amount(amount)}u ({operator})\n"
             else:
-                amount = float(parts[0].split()[1])
+                amount = float(parts[0].split()[1].rstrip('u'))
                 adjusted = float(parts[1].split()[0].rstrip('u'))
                 effective_rate = 1 + withdraw_fee_rate
                 bill += f"{timestamp}  {format_amount(amount)}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_withdraw)}={format_amount(adjusted)}u ({operator})\n"
@@ -225,9 +225,10 @@ async def handle_message(update, context):
             file_type = "图片"
 
         if file_id:
-            print(f"处理文件消息，类型: {file_type}, 文件ID: {file_id}, 文本: {message_text or '无'}")
+            caption = update.message.caption or update.message.text or None
+            print(f"处理文件消息，类型: {file_type}, 文件ID: {file_id}, 文本: {caption or '无'}")
             last_file_id[chat_id] = file_id
-            last_file_message[chat_id] = {"file_id": file_id, "caption": message_text or None}
+            last_file_message[chat_id] = {"file_id": file_id, "caption": caption}
             try:
                 await update.message.reply_text(f"{file_type}文件 ID: {file_id}")
             except Exception as e:
@@ -354,7 +355,7 @@ async def handle_message(update, context):
                     operators[chat_id] = {}
                 operators[chat_id][operator] = True
                 global_operators.add(operator)  # 添加到全局操作员列表
-                await update.message.reply_text(f"已将 @{operator} 设置为操作员（群聊和私聊权限）")
+                await update.message.reply_text(f"已将 @{operator} 设置为操作员")
             else:
                 await update.message.reply_text("请使用格式：设置操作员 @用户名")
 
@@ -367,7 +368,7 @@ async def handle_message(update, context):
                 if chat_id in operators and operator in operators[chat_id]:
                     del operators[chat_id][operator]
                     global_operators.discard(operator)  # 从全局操作员列表移除
-                    await update.message.reply_text(f"已删除 @{operator} 的操作员权限（群聊和私聊）")
+                    await update.message.reply_text(f"已删除 @{operator} 的操作员权限")
                 else:
                     await update.message.reply_text(f"@{operator} 不是操作员")
             else:
@@ -636,50 +637,37 @@ async def handle_message(update, context):
 
         if message_text.startswith("任务 ") and not message_text.endswith("-1"):
             parts = message_text.split(" ", 3)
-            if len(parts) == 3 and parts[1] and parts[2]:  # 标记回复模式：任务 队名 时间
+            if len(parts) == 3 and parts[1] and parts[2]:  # 标记回复模式
                 if username and (username in global_operators or username == initial_admin_username):
                     if update.message.reply_to_message:
                         reply_message = update.message.reply_to_message
-                        if reply_message.from_user.is_bot and "文件 ID:" in (reply_message.text or ""):
-                            original_message = reply_message.reply_to_message
-                            if not original_message:
-                                print(f"任务失败：未找到原始文件消息，回复消息内容: {reply_message.text}")
-                                await update.message.reply_text("请直接回复机器人返回的‘动图文件 ID’、‘视频文件 ID’或‘图片文件 ID’消息")
-                                return
-                            if original_message and (original_message.document or original_message.photo or original_message.animation or original_message.video):
-                                print(f"任务回复处理：回复消息={reply_message.text}, 原始消息文件类型: animation={bool(original_message.animation)}, document={bool(original_message.document)}, photo={bool(original_message.photo)}, video={bool(original_message.video)}")
-                                file_id = (original_message.document.file_id if original_message.document 
-                                          else original_message.photo[-1].file_id if original_message.photo 
-                                          else original_message.animation.file_id if original_message.animation
-                                          else original_message.video.file_id)
-                                caption = original_message.caption or ""
-                                team_name, time_str = parts[1], parts[2]
-                                if team_name in team_groups:
-                                    try:
-                                        current_time = datetime.now(pytz.timezone("Asia/Bangkok"))
-                                        scheduled_time = current_time.replace(hour=int(time_str.split(":")[0]), minute=int(time_str.split(":")[1]), second=0, microsecond=0)
-                                        if scheduled_time < current_time:
-                                            scheduled_time += timedelta(days=1)
-                                        task_id = ''.join(random.choices(string.ascii_letters + string.digits, k=5))
-                                        temp_template_name = f"temp_{task_id}"
-                                        templates[temp_template_name] = {"message": caption, "file_id": file_id}
-                                        scheduled_tasks[task_id] = {"team": team_name, "template": temp_template_name, "time": scheduled_time}
-                                        await update.message.reply_text(f"任务已创建，任务 ID: {task_id}，请回复 `确认 {task_id}` 执行")
-                                    except (ValueError, IndexError):
-                                        await update.message.reply_text("时间格式错误，请使用 HH:MM，例如 17:00")
-                                else:
-                                    await update.message.reply_text("任务目标有误，请检查队名")
+                        if reply_message.animation or reply_message.video or reply_message.photo or reply_message.document:
+                            file_id = (reply_message.animation.file_id if reply_message.animation
+                                      else reply_message.video.file_id if reply_message.video
+                                      else reply_message.photo[-1].file_id if reply_message.photo
+                                      else reply_message.document.file_id)
+                            caption = reply_message.caption or reply_message.text or ""
+                            team_name, time_str = parts[1], parts[2]
+                            if team_name in team_groups:
+                                try:
+                                    current_time = datetime.now(pytz.timezone("Asia/Bangkok"))
+                                    scheduled_time = current_time.replace(hour=int(time_str.split(":")[0]), minute=int(time_str.split(":")[1]), second=0, microsecond=0)
+                                    if scheduled_time < current_time:
+                                        scheduled_time += timedelta(days=1)
+                                    task_id = ''.join(random.choices(string.ascii_letters + string.digits, k=5))
+                                    temp_template_name = f"temp_{task_id}"
+                                    templates[temp_template_name] = {"message": caption, "file_id": file_id}
+                                    scheduled_tasks[task_id] = {"team": team_name, "template": temp_template_name, "time": scheduled_time}
+                                    await update.message.reply_text(f"任务已创建，任务 ID: {task_id}，请回复 `确认 {task_id}` 执行")
+                                except (ValueError, IndexError):
+                                    await update.message.reply_text("时间格式错误，请使用 HH:MM，例如 17:00")
                             else:
-                                print(f"任务失败：原始消息无有效文件，回复消息内容: {reply_message.text}")
-                                await update.message.reply_text("请回复包含动图、视频或图片的文件 ID 消息")
+                                await update.message.reply_text("任务目标有误，请检查队名")
                         else:
-                            print(f"任务失败：回复消息非机器人‘文件 ID’消息，内容: {reply_message.text}")
-                            await update.message.reply_text("请直接回复机器人返回的‘动图文件 ID’、‘视频文件 ID’或‘图片文件 ID’消息")
+                            await update.message.reply_text("请回复包含动图、视频或图片的消息")
                     else:
-                        await update.message.reply_text("请回复包含动图、视频或图片的文件 ID 消息")
-                else:
-                    await update.message.reply_text(f"仅操作员可执行此操作，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
-            elif len(parts) == 4 and parts[1] and parts[2] and parts[3]:  # 现有模板模式：任务 队名 时间 模板名
+                        await update.message.reply_text("请回复包含动图、视频或图片的消息")
+            elif len(parts) == 4 and parts[1] and parts[2] and parts[3]:  # 现有模板模式
                 if username and (username in global_operators or username == initial_admin_username):
                     team_name, time_str, template_name = parts[1], parts[2], parts[3]
                     try:
