@@ -1,5 +1,5 @@
 # 导入必要的模块
-from telegram.ext import Application, MessageHandler, filters, ChatMemberHandler
+from telegram.ext import Application, MessageHandler, filters
 import telegram.ext
 import schedule
 import time
@@ -37,7 +37,6 @@ team_groups = {}  # {队名: [群ID列表]}
 scheduled_tasks = {}  # {任务ID: {"team": 队名, "template": 模板名, "time": 任务时间}}
 last_file_id = {}  # {chat_id: 文件ID}
 templates = {}  # {模板名: {"message": 广告文, "file_id": 文件ID}}
-joined_chats = set()  # 存储机器人已加入的群 ID
 
 # 设置日志任务
 def setup_schedule():
@@ -123,29 +122,7 @@ def format_exchange_rate(rate):
         return f"{rate:.2f}"
     return formatted
 
-# 欢迎新成员（保持不变）
-async def welcome_new_member(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
-    chat_id = str(update.message.chat_id)
-    if chat_id not in user_history:
-        user_history[chat_id] = {}
-    if update.message and update.message.new_chat_members:
-        for member in update.message.new_chat_members:
-            user_id = str(member.id)
-            username = member.username
-            first_name = member.first_name.strip() if member.first_name else None
-            user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
-            nickname = first_name or username or "新朋友"
-            await update.message.reply_text(f"欢迎 {nickname} 来到本群")
-            joined_chats.add(chat_id)
-
-# 处理群成员更新（Webhook 方式记录群 ID）
-async def handle_chat_member(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
-    chat_id = str(update.chat_member.chat.id)
-    if update.chat_member.new_chat_member.user.id == context.bot.id and update.chat_member.new_chat_member.status in ["member", "administrator"]:
-        joined_chats.add(chat_id)
-        logger.info(f"机器人加入新群: {chat_id}")
-
-# 处理所有消息（保持不变，但移除获取群 ID 逻辑）
+# 处理所有消息（移除获取群 ID 逻辑）
 async def handle_message(update, context):
     global exchange_rate_deposit, deposit_fee_rate, exchange_rate_withdraw, withdraw_fee_rate, operators, transactions, user_history, address_verify_count
     global is_accounting_enabled, team_groups, scheduled_tasks, last_file_id, templates
@@ -562,19 +539,7 @@ async def send_broadcast(context, task):
             except Exception as e:
                 logger.error(f"发送至群组 {group_id} 失败: {e}")
 
-# 初始化已加入群的列表（移除）
-# async def initialize_joined_chats(context):
-#     global joined_chats
-#     try:
-#         updates = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates").json()
-#         for update in updates.get("result", []):
-#             if "message" in update and "chat" in update["message"] and update["message"]["chat"]["type"] in ["group", "supergroup"]:
-#                 joined_chats.add(str(update["message"]["chat"]["id"]))
-#         logger.info(f"初始化已加入群: {joined_chats}")
-#     except requests.RequestException as e:
-#         logger.error(f"初始化群列表失败: {e}")
-
-# 主函数（修正事件循环管理）
+# 主函数（简化）
 async def main():
     port = int(os.getenv("PORT", "10000"))
     logger.info(f"Listening on port: {port}")
@@ -583,13 +548,8 @@ async def main():
     application = Application.builder().token(BOT_TOKEN).build()
     await application.initialize()
 
-    # 初始化已加入群的列表（移除调用）
-    # await initialize_joined_chats(application)
-
     # 添加处理程序
-    application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
     application.add_handler(MessageHandler(telegram.ext.filters.TEXT, handle_message))
-    application.add_handler(ChatMemberHandler(handle_chat_member))
 
     # 设置定时任务
     setup_schedule()
@@ -607,8 +567,6 @@ async def main():
 
     try:
         logger.info("尝试启动 Webhook...")
-        # 使用当前运行的事件循环
-        loop = asyncio.get_running_loop()
         await application.run_webhook(
             listen="0.0.0.0",
             port=port,
@@ -618,7 +576,6 @@ async def main():
     except Exception as e:
         logger.error(f"Webhook 设置失败: {e}")
     finally:
-        # 确保关闭 Application
         await application.shutdown()
 
 # 运行主函数
