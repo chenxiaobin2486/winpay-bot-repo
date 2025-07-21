@@ -469,7 +469,7 @@ async def handle_message(update, context):
 
     elif message_text == "操作员列表":
         if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')]] 匹配到 '操作员列表' 指令")
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')] 匹配到 '操作员列表' 指令")
             op_list = ", ".join([f"@{op}" for op in operators.get(chat_id, {})])
             await update.message.reply_text(f"当前群组操作员列表: {op_list if op_list else '无操作员'}\n全局操作员列表: {', '.join(f'@{op}' for op in global_operators)}")
 
