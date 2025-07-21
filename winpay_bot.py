@@ -1,5 +1,5 @@
 # 导入必要的模块
-from telegram.ext import Application, MessageHandler, filters
+from telegram.ext import Application, MessageHandler, filters, ChatMemberHandler
 import telegram.ext
 import schedule
 import time
@@ -21,21 +21,23 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7908773608:AAFFqLmGkJ9zbsuymQTFzJxy5IyeN1E9M-U")
 
 # 定义全局变量（记账部分）
-initial_admin_username = "WinPay06_Thomason"  # 初始最高权限管理员用户名
-operators = {}  # {chat_id: {username: True}}，每个群组独立操作员列表
-transactions = {}  # {chat_id: [transaction_list]}，每个群组独立记账
-user_history = {}  # {chat_id: {user_id: {"username": str, "first_name": str}}}，记录成员历史
+initial_admin_username = "WinPay06_Thomason"
+operators = {}  # {chat_id: {username: True}}
+transactions = {}  # {chat_id: [transaction_list]}
+user_history = {}  # {chat_id: {user_id: {"username": str, "first_name": str}}}
 exchange_rate_deposit = 1.0
 deposit_fee_rate = 0.0
 exchange_rate_withdraw = 1.0
 withdraw_fee_rate = 0.0
-address_verify_count = {}  # {chat_id: {"count": int, "last_user": str}}，记录地址验证次数和上次发送人
+address_verify_count = {}  # {chat_id: {"count": int, "last_user": str}}
+is_accounting_enabled = {}  # {chat_id: bool}，控制记账状态，默认为 True
 
 # 定义全局变量（群发部分）
-team_groups = {}  # {队名: [群ID列表]}，编队管理
-scheduled_tasks = {}  # {任务ID: {"team": 队名, "template": 模板名, "time": 任务时间}}，任务调度
-last_file_id = {}  # {chat_id: 文件ID}，记录最近文件 ID
-templates = {}  # {模板名: {"message": 广告文, "file_id": 文件ID}}，存储模板
+team_groups = {}  # {队名: [群ID列表]}
+scheduled_tasks = {}  # {任务ID: {"team": 队名, "template": 模板名, "time": 任务时间}}
+last_file_id = {}  # {chat_id: 文件ID}
+templates = {}  # {模板名: {"message": 广告文, "file_id": 文件ID}}
+joined_chats = set()  # 存储机器人已加入的群 ID
 
 # 设置日志任务
 def setup_schedule():
@@ -55,7 +57,6 @@ async def handle_bill(update, context):
     deposit_count = sum(1 for t in recent_transactions if t.startswith("入款"))
     withdraw_count = sum(1 for t in recent_transactions if t.startswith("下发"))
 
-    # 入款部分
     if deposit_count > 0:
         bill += f"入款（{deposit_count}笔）\n"
         for t in reversed([t for t in recent_transactions if t.startswith("入款")]):
@@ -71,9 +72,8 @@ async def handle_bill(update, context):
                 effective_rate = 1 - deposit_fee_rate
                 bill += f"{timestamp}  {format_amount(amount)}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_deposit)}={format_amount(adjusted)}u ({operator})\n"
 
-    # 出款部分
     if withdraw_count > 0:
-        if deposit_count > 0:  # 若有入款，添加空行分隔
+        if deposit_count > 0:
             bill += "\n"
         bill += f"出款（{withdraw_count}笔）\n"
         for t in reversed([t for t in recent_transactions if t.startswith("下发")]):
@@ -89,19 +89,13 @@ async def handle_bill(update, context):
                 effective_rate = 1 + withdraw_fee_rate
                 bill += f"{timestamp}  {format_amount(amount)}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_withdraw)}={format_amount(adjusted)}u ({operator})\n"
 
-    # 统计信息
-    if deposit_count > 0 or withdraw_count > 0:  # 只有有交易时才显示统计
-        if deposit_count > 0 or withdraw_count > 0:  # 确保有统计内容前加空行
-            bill += "\n"
-        # 仅在有入款时显示入款相关统计
+    if deposit_count > 0 or withdraw_count > 0:
+        bill += "\n"
         if deposit_count > 0:
             bill += f"入款汇率：{format_exchange_rate(exchange_rate_deposit)}  |  费率：{int(deposit_fee_rate*100)}%\n"
-        # 仅在有出款时显示出款相关统计
         if withdraw_count > 0:
             bill += f"出款汇率：{format_exchange_rate(exchange_rate_withdraw)}  |  费率：{int(withdraw_fee_rate*100)}%\n"
-        if deposit_count > 0 or withdraw_count > 0:  # 确保统计分段
-            bill += "\n"
-        # 总金额统计
+        bill += "\n"
         total_deposit = sum(float(t.split(" -> ")[0].split()[1].rstrip('u')) for t in transactions[chat_id] if t.startswith("入款"))
         total_deposit_adjusted = sum(float(t.split(" -> ")[1].split()[0].rstrip('u')) for t in transactions[chat_id] if t.startswith("入款"))
         total_withdraw = sum(float(t.split(" -> ")[0].split()[1].rstrip('u')) for t in transactions[chat_id] if t.startswith("下发"))
@@ -142,11 +136,19 @@ async def welcome_new_member(update: telegram.Update, context: telegram.ext.Cont
             user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
             nickname = first_name or username or "新朋友"
             await update.message.reply_text(f"欢迎 {nickname} 来到本群")
+            joined_chats.add(chat_id)
 
-# 处理所有消息（扩展群发逻辑）
+# 处理群成员更新（Webhook 方式记录群 ID）
+async def handle_chat_member(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.chat_member.chat.id)
+    if update.chat_member.new_chat_member.user.id == context.bot.id and update.chat_member.new_chat_member.status in ["member", "administrator"]:
+        joined_chats.add(chat_id)
+        logger.info(f"机器人加入新群: {chat_id}")
+
+# 处理所有消息（更新“开始”、“停止记账”、“恢复记账”）
 async def handle_message(update, context):
     global exchange_rate_deposit, deposit_fee_rate, exchange_rate_withdraw, withdraw_fee_rate, operators, transactions, user_history, address_verify_count
-    global team_groups, scheduled_tasks, last_file_id, templates
+    global is_accounting_enabled, team_groups, scheduled_tasks, last_file_id, templates
     message_text = update.message.text.strip()
     chat_id = str(update.message.chat_id)
     user_id = str(update.message.from_user.id)
@@ -156,7 +158,7 @@ async def handle_message(update, context):
     logger.info(f"收到消息: '{message_text}' 从用户 {user_id}, username: {username}, chat_id: {chat_id}")
     logger.info(f"当前操作员列表: {operators.get(chat_id, {})}")
 
-    # 记账部分初始化
+    # 初始化状态
     if chat_id not in operators:
         operators[chat_id] = {initial_admin_username: True}
     if chat_id not in transactions:
@@ -165,8 +167,8 @@ async def handle_message(update, context):
         user_history[chat_id] = {}
     if chat_id not in address_verify_count:
         address_verify_count[chat_id] = {"count": 0, "last_user": None}
-
-    # 群发部分初始化
+    if chat_id not in is_accounting_enabled:
+        is_accounting_enabled[chat_id] = True
     if chat_id not in last_file_id:
         last_file_id[chat_id] = None
 
@@ -189,17 +191,34 @@ async def handle_message(update, context):
             logger.warning(f"昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
         user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
 
-    # 记账功能（保持不变）
+    # 记账功能
     if message_text == "开始":
         if username and username in operators.get(chat_id, {}):
             logger.info("匹配到 '开始' 指令")
-            await update.message.reply_text("欢迎使用winpay小秘书")
+            transactions[chat_id].clear()  # 清空当前账单
+            is_accounting_enabled[chat_id] = True  # 确保记账功能启用
+            await update.message.reply_text("欢迎使用winpay小秘书，全天候为你服务")
+
+    elif message_text == "停止记账":
+        if username and username in operators.get(chat_id, {}):
+            logger.info("匹配到 '停止记账' 指令")
+            is_accounting_enabled[chat_id] = False  # 停止记账功能
+            await update.message.reply_text("已暂停记账功能")
+
+    elif message_text == "恢复记账":
+        if username and username in operators.get(chat_id, {}):
+            logger.info("匹配到 '恢复记账' 指令")
+            is_accounting_enabled[chat_id] = True  # 恢复记账功能
+            await update.message.reply_text("记账功能已恢复")
+
     elif message_text == "说明":
         if username and username in operators.get(chat_id, {}):
             logger.info("匹配到 '说明' 指令")
             help_text = """
 可用指令：
-开始使用：开始
+开始使用：开始（重启机器人，清空账单，恢复记账）
+停止记账：停止记账
+恢复记账：恢复记账
 记入入款：入款 或 +100 或 +100u/U
 记入下发：下发 100 或 下发 50u/U
 设置操作员：设置操作员 @用户名
@@ -214,7 +233,8 @@ async def handle_message(update, context):
 查看操作员：操作员列表
             """
             await update.message.reply_text(help_text)
-    elif (message_text.startswith("入款") or message_text.startswith("+")) and message_text != "+0":
+
+    elif (message_text.startswith("入款") or message_text.startswith("+")) and message_text != "+0" and is_accounting_enabled.get(chat_id, True):
         if username and username in operators.get(chat_id, {}):
             logger.info(f"匹配到 '入款' 或 '+' 指令，金额: {message_text.replace('入款', '').replace('+', '').strip()}")
             try:
@@ -237,7 +257,8 @@ async def handle_message(update, context):
                 await handle_bill(update, context)
             except ValueError:
                 await update.message.reply_text("请输入正确金额，例如：入款1000 或 +1000 或 +100u")
-    elif message_text.startswith("下发"):
+
+    elif message_text.startswith("下发") and is_accounting_enabled.get(chat_id, True):
         if username and username in operators.get(chat_id, {}):
             logger.info(f"匹配到 '下发' 指令，金额: {message_text.replace('下发', '').strip()}")
             try:
@@ -260,32 +281,8 @@ async def handle_message(update, context):
                 await handle_bill(update, context)
             except ValueError:
                 await update.message.reply_text("请输入正确金额，例如：下发500 或 下发50u")
-    elif message_text.startswith("设置操作员"):
-        if username and username in operators.get(chat_id, {}):
-            logger.info(f"匹配到 '设置操作员' 指令，参数: {message_text.replace('设置操作员', '').strip()}")
-            operator = message_text.replace("设置操作员", "").strip()
-            if operator.startswith("@"):
-                operator = operator[1:]  # 移除 @ 符号
-                if chat_id not in operators:
-                    operators[chat_id] = {}
-                operators[chat_id][operator] = True
-                await update.message.reply_text(f"已将 @{operator} 设置为操作员")
-            else:
-                await update.message.reply_text("请使用格式：设置操作员 @用户名")
-    elif message_text.startswith("删除操作员"):
-        if username and username in operators.get(chat_id, {}):
-            logger.info(f"匹配到 '删除操作员' 指令，参数: {message_text.replace('删除操作员', '').strip()}")
-            operator = message_text.replace("删除操作员", "").strip()
-            if operator.startswith("@"):
-                operator = operator[1:]  # 移除 @ 符号
-                if chat_id in operators and operator in operators[chat_id]:
-                    del operators[chat_id][operator]
-                    await update.message.reply_text(f"已删除 @{operator} 的操作员权限")
-                else:
-                    await update.message.reply_text(f"@{operator} 不是操作员")
-            else:
-                await update.message.reply_text("请使用格式：删除操作员 @用户名")
-    elif message_text.startswith("设置入款汇率"):
+
+    elif message_text.startswith("设置入款汇率") and is_accounting_enabled.get(chat_id, True):
         if username and username in operators.get(chat_id, {}):
             logger.info(f"匹配到 '设置入款汇率' 指令，汇率: {message_text.replace('设置入款汇率', '').strip()}")
             try:
@@ -294,7 +291,8 @@ async def handle_message(update, context):
                 await update.message.reply_text(f"设置成功入款汇率 {format_exchange_rate(exchange_rate_deposit)}")
             except ValueError:
                 await update.message.reply_text("请输入正确汇率，例如：设置入款汇率0.98")
-    elif message_text.startswith("设置入款费率"):
+
+    elif message_text.startswith("设置入款费率") and is_accounting_enabled.get(chat_id, True):
         if username and username in operators.get(chat_id, {}):
             logger.info(f"匹配到 '设置入款费率' 指令，费率: {message_text.replace('设置入款费率', '').strip()}")
             try:
@@ -303,7 +301,8 @@ async def handle_message(update, context):
                 await update.message.reply_text(f"设置成功入款费率 {int(rate*100)}%")
             except ValueError:
                 await update.message.reply_text("请输入正确费率，例如：设置入款费率8")
-    elif message_text.startswith("设置下发汇率"):
+
+    elif message_text.startswith("设置下发汇率") and is_accounting_enabled.get(chat_id, True):
         if username and username in operators.get(chat_id, {}):
             logger.info(f"匹配到 '设置下发汇率' 指令，汇率: {message_text.replace('设置下发汇率', '').strip()}")
             try:
@@ -312,7 +311,8 @@ async def handle_message(update, context):
                 await update.message.reply_text(f"设置成功下发汇率 {format_exchange_rate(exchange_rate_withdraw)}")
             except ValueError:
                 await update.message.reply_text("请输入正确汇率，例如：设置下发汇率1.25")
-    elif message_text.startswith("设置下发费率"):
+
+    elif message_text.startswith("设置下发费率") and is_accounting_enabled.get(chat_id, True):
         if username and username in operators.get(chat_id, {}):
             logger.info(f"匹配到 '设置下发费率' 指令，费率: {message_text.replace('设置下发费率', '').strip()}")
             try:
@@ -321,10 +321,12 @@ async def handle_message(update, context):
                 await update.message.reply_text(f"设置成功下发费率 {int(rate*100)}%")
             except ValueError:
                 await update.message.reply_text("请输入正确费率，例如：设置下发费率8")
+
     elif message_text == "账单" or message_text == "+0":
         if username and username in operators.get(chat_id, {}):
             logger.info("匹配到 '账单' 或 '+0' 指令")
             await handle_bill(update, context)
+
     elif message_text == "删除":
         if username and username in operators.get(chat_id, {}):
             logger.info("匹配到 '删除' 指令")
@@ -342,7 +344,7 @@ async def handle_message(update, context):
                             if t_amount == amount and has_u == t_has_u:
                                 transactions[chat_id].remove(t)
                                 await update.message.reply_text(f"入款 {format_amount(amount)}{'u' if has_u else ''} 已被撤销")
-                                await handle_bill(update, context)  # 自动显示账单
+                                await handle_bill(update, context)
                                 return
                 elif original_message.startswith("下发"):
                     amount_str = original_message.replace("下发", "").strip()
@@ -355,26 +357,30 @@ async def handle_message(update, context):
                             if t_amount == amount and has_u == t_has_u:
                                 transactions[chat_id].remove(t)
                                 await update.message.reply_text(f"下发 {format_amount(amount)}{'u' if has_u else ''} 已被撤销")
-                                await handle_bill(update, context)  # 自动显示账单
+                                await handle_bill(update, context)
                                 return
                 await update.message.reply_text("无法撤销此消息，请确保回复正确的入款或下发记录")
             else:
                 await update.message.reply_text("请回复目标交易相关消息以删除")
+
     elif message_text == "删除账单":
         if username and username in operators.get(chat_id, {}):
             logger.info("匹配到 '删除账单' 指令")
             transactions[chat_id].clear()
             await update.message.reply_text("今日已清账💰，重新开始记账")
+
     elif message_text == "日切" and username == initial_admin_username:
         if username in operators.get(chat_id, {}):
             logger.info("匹配到 '日切' 指令")
             transactions[chat_id].clear()
             await update.message.reply_text("交易记录已清空")
+
     elif message_text == "操作员列表":
         if username and username in operators.get(chat_id, {}):
             logger.info("匹配到 '操作员列表' 指令")
             op_list = ", ".join([f"@{op}" for op in operators.get(chat_id, {})])
             await update.message.reply_text(f"当前操作员列表: {op_list}" if op_list else "当前无操作员")
+
     elif re.match(r'^[T][a-km-zA-HJ-NP-Z1-9]{33}$', message_text):
         logger.info("匹配到 TRX 地址验证")
         chat_id = str(update.message.chat_id)
@@ -391,7 +397,6 @@ async def handle_message(update, context):
 
     # 群发功能（仅私聊有效）
     if update.message.chat.type == "private":
-        # 处理文件消息，获取文件 ID
         if update.message.document or update.message.photo or update.message.animation:
             file_id = (update.message.document.file_id if update.message.document 
                       else update.message.photo[-1].file_id if update.message.photo 
@@ -399,25 +404,25 @@ async def handle_message(update, context):
             last_file_id[chat_id] = file_id
             await update.message.reply_text(f"文件 ID: {file_id}")
 
-        # 自动解析邀请链接
         if re.match(r'https?://t\.me/\+\w+', message_text):
             logger.info(f"Attempting to parse invite link: {message_text}")
             try:
-                response = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getChat?chat_id={message_text}")
-                data = response.json()
-                logger.info(f"API response: {data}")
-                if data.get("ok"):
-                    chat_id = str(data["result"]["id"])
-                    await update.message.reply_text(f"群 ID: {chat_id}")
-                else:
-                    error_desc = data.get("description", "Unknown error")
-                    logger.error(f"API error: {error_desc}")
-                    await update.message.reply_text(f"链接无效请检查: {error_desc}. 请确保机器人已加入群组。")
-            except requests.RequestException as e:
-                logger.error(f"Request failed: {e}")
-                await update.message.reply_text("链接无效请检查: 网络错误或API调用失败")
+                found = False
+                for cid in joined_chats:
+                    try:
+                        chat = await context.bot.get_chat(cid)
+                        if chat.invite_link == message_text or chat.username:
+                            await update.message.reply_text(f"群 ID: {cid}")
+                            found = True
+                            break
+                    except telegram.error.TelegramError:
+                        continue
+                if not found:
+                    await update.message.reply_text("链接无效请检查: 机器人可能未加入该群。请添加机器人至群组并重试。")
+            except telegram.error.TelegramError as e:
+                logger.error(f"Telegram error: {e}")
+                await update.message.reply_text(f"链接无效请检查: {str(e)}. 请确保机器人已加入群组。")
 
-        # 显示群发说明
         if message_text == "群发说明":
             help_text = """
 ### 群发指令说明
@@ -431,7 +436,7 @@ async def handle_message(update, context):
      3. 点击“添加成员”或“邀请链接”（需要管理员权限），复制邀请链接（例如 `https://t.me/+nW4I6Y81dec5MWE1`）。  
      4. 在私聊中直接发送该链接给机器人。  
    - 功能：机器人自动解析链接，成功时回复“群 ID: -1001234567890”，失败时回复“链接无效请检查”。  
-   - 注意：确保链接有效，机器人需有权限访问该群。
+   - 注意：确保链接有效，机器人需已加入该群。
 
 2. **编辑模板**  
    - 指令：`编辑 模板名 广告文`  
@@ -445,7 +450,7 @@ async def handle_message(update, context):
 3. **创建群发任务**  
    - 指令：`任务 队名 时间 模板名`  
    - 功能：为指定编队（队名）设置群发任务，使用指定模板的广告文和文件 ID，时间格式为 `HH:MM`（24小时制）。  
-   - 示例：`任务 广告队 16:00 模板1`  
+   - 示例：`任务 广告队 17:00 模板1`  
    - 结果：机器人生成唯一任务 ID（例如 `12345`），回复“任务已创建，任务 ID: 12345，请回复 `确认 12345` 执行”。  
    - 时间处理：以服务器时间（+07）为准，若时间已过当天自动调整为次日。
 
@@ -481,7 +486,6 @@ async def handle_message(update, context):
             """
             await update.message.reply_text(help_text)
 
-        # 编辑模板
         if message_text.startswith("编辑 "):
             parts = message_text.split(" ", 2)
             if len(parts) == 3 and parts[1] and parts[2]:
@@ -496,7 +500,6 @@ async def handle_message(update, context):
             else:
                 await update.message.reply_text("使用格式：编辑 模板名 广告文")
 
-        # 创建群发任务
         if message_text.startswith("任务 ") and not message_text.endswith("-1"):
             parts = message_text.split(" ", 3)
             if len(parts) == 4 and parts[1] and parts[2] and parts[3]:
@@ -510,9 +513,8 @@ async def handle_message(update, context):
                     scheduled_tasks[task_id] = {"team": team_name, "template": template_name, "time": scheduled_time}
                     await update.message.reply_text(f"任务已创建，任务 ID: {task_id}，请回复 `确认 {task_id}` 执行")
                 except (ValueError, IndexError):
-                    await update.message.reply_text("时间格式错误，请使用 HH:MM，例如 16:00")
+                    await update.message.reply_text("时间格式错误，请使用 HH:MM，例如 17:00")
 
-        # 确认任务
         if message_text.startswith("确认 "):
             task_id = message_text.replace("确认 ", "").strip()
             if task_id in scheduled_tasks:
@@ -523,13 +525,12 @@ async def handle_message(update, context):
                         lambda t=task: asyncio.run(send_broadcast(context, t))
                     ).tag(task_id)
                     await update.message.reply_text(f"任务 {task_id} 已计划，等待执行")
-                    del scheduled_tasks[task_id]  # 移除待确认任务
+                    del scheduled_tasks[task_id]
                 else:
                     await update.message.reply_text("任务目标有误请检查")
             else:
                 await update.message.reply_text("无效的任务 ID")
 
-        # 取消任务
         if message_text.startswith("任务 ") and message_text.endswith("-1"):
             team_name = message_text.replace("任务 ", "").replace("-1", "").strip()
             for task_id, task in list(scheduled_tasks.items()):
@@ -541,7 +542,6 @@ async def handle_message(update, context):
             else:
                 await update.message.reply_text("无此队名的待执行任务")
 
-        # 创建/更新编队
         if message_text.startswith("编队 "):
             parts = message_text.split(" ", 2)
             if len(parts) == 3 and parts[1] and parts[2]:
@@ -549,7 +549,7 @@ async def handle_message(update, context):
                 group_ids = [gid.strip() for gid in parts[2].split(",") if gid.strip()]
                 try:
                     for gid in group_ids:
-                        int(gid)  # 验证群 ID 是否为整数
+                        int(gid)
                     team_groups[team_name] = group_ids
                     await update.message.reply_text("编队已更新")
                 except ValueError:
@@ -557,7 +557,6 @@ async def handle_message(update, context):
             else:
                 await update.message.reply_text("使用格式：编队 队名 群ID, 群ID")
 
-        # 从编队删除群组
         if message_text.startswith("删除 "):
             parts = message_text.split(" ", 2)
             if len(parts) == 3 and parts[1] and parts[2]:
@@ -575,7 +574,7 @@ async def handle_message(update, context):
             else:
                 await update.message.reply_text("使用格式：删除 队名 群ID, 群ID")
 
-# 群发执行函数
+# 群发执行函数（保持不变）
 async def send_broadcast(context, task):
     team_name = task["team"]
     template_name = task["template"]
@@ -591,6 +590,18 @@ async def send_broadcast(context, task):
             except Exception as e:
                 logger.error(f"发送至群组 {group_id} 失败: {e}")
 
+# 初始化已加入群的列表
+async def initialize_joined_chats(context):
+    global joined_chats
+    try:
+        updates = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates").json()
+        for update in updates.get("result", []):
+            if "message" in update and "chat" in update["message"] and update["message"]["chat"]["type"] in ["group", "supergroup"]:
+                joined_chats.add(str(update["message"]["chat"]["id"]))
+        logger.info(f"初始化已加入群: {joined_chats}")
+    except requests.RequestException as e:
+        logger.error(f"初始化群列表失败: {e}")
+
 # 主函数（保持不变）
 def main():
     port = int(os.getenv("PORT", "10000"))
@@ -598,8 +609,12 @@ def main():
 
     application = Application.builder().token(BOT_TOKEN).build()
 
+    # 初始化已加入群的列表
+    asyncio.run(initialize_joined_chats(application))
+
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
     application.add_handler(MessageHandler(telegram.ext.filters.TEXT, handle_message))
+    application.add_handler(ChatMemberHandler(handle_chat_member))
 
     setup_schedule()
 
