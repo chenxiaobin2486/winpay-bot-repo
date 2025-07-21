@@ -669,7 +669,7 @@ def main():
     application = Application.builder().token(BOT_TOKEN).build()
 
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
-    application.add_handler(MessageHandler(filters.TEXT | filters.Photo | filters.Document.ALL | filters.Animation, handle_message))
+    application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL | filters.ANIMATION, handle_message))
 
     setup_schedule()
 
