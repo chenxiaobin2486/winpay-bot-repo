@@ -166,6 +166,7 @@ async def handle_message(update, context):
     first_name = update.message.from_user.first_name.strip() if update.message.from_user.first_name else None
     operator_name = first_name or "未知用户"
     print(f"收到消息: '{message_text}' 从用户 {user_id}, username: {username}, chat_id: {chat_id}")
+    print(f"消息详情: animation={bool(update.message.animation)}, document={bool(update.message.document)}, photo={bool(update.message.photo)}")
     print(f"当前操作员列表: {operators.get(chat_id, {})}")
 
     if chat_id not in operators:
@@ -214,12 +215,12 @@ async def handle_message(update, context):
         elif update.message.document:
             file_id = update.message.document.file_id
             file_type = "视频"
-        elif update.message.photo and update.message.photo:
+        elif update.message.photo and len(update.message.photo) > 0:
             file_id = update.message.photo[-1].file_id
             file_type = "图片"
 
         if file_id:
-            print(f"收到文件消息，类型: {file_type}, 文件ID: {file_id}, 文本: {message_text or '无'}")
+            print(f"处理文件消息，类型: {file_type}, 文件ID: {file_id}, 文本: {message_text or '无'}")
             last_file_id[chat_id] = file_id
             last_file_message[chat_id] = {"file_id": file_id, "caption": message_text or None}
             try:
