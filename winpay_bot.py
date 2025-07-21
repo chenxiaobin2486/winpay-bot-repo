@@ -22,6 +22,7 @@ deposit_fee_rate = 0.0
 exchange_rate_withdraw = 1.0
 withdraw_fee_rate = 0.0
 address_verify_count = {}  # {chat_id: {"count": int, "last_user": str}}，记录地址验证次数和上次发送人
+is_accounting_enabled = {}  # {chat_id: bool}，控制记账状态，默认为 True
 
 # 设置日志任务
 def setup_schedule():
@@ -131,7 +132,7 @@ async def welcome_new_member(update: telegram.Update, context: telegram.ext.Cont
 
 # 处理所有消息
 async def handle_message(update, context):
-    global exchange_rate_deposit, deposit_fee_rate, exchange_rate_withdraw, withdraw_fee_rate, operators, transactions, user_history, address_verify_count
+    global exchange_rate_deposit, deposit_fee_rate, exchange_rate_withdraw, withdraw_fee_rate, operators, transactions, user_history, address_verify_count, is_accounting_enabled
     message_text = update.message.text.strip()
     chat_id = str(update.message.chat_id)
     user_id = str(update.message.from_user.id)
@@ -149,6 +150,8 @@ async def handle_message(update, context):
         user_history[chat_id] = {}
     if chat_id not in address_verify_count:
         address_verify_count[chat_id] = {"count": 0, "last_user": None}
+    if chat_id not in is_accounting_enabled:
+        is_accounting_enabled[chat_id] = True  # 默认启用记账
 
     # 更新或记录用户历史
     if user_id not in user_history[chat_id]:
@@ -169,12 +172,28 @@ async def handle_message(update, context):
             print(f"昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
         user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
 
+    # 记账功能
     if message_text == "开始":
         if username and username in operators.get(chat_id, {}):
             print("匹配到 '开始' 指令")
-            await update.message.reply_text("欢迎使用winpay小秘书")
-    elif message_text == "说明":
+            transactions[chat_id].clear()  # 清空当前账单，重新开始记账
+            is_accounting_enabled[chat_id] = True  # 确保启用记账
+            await update.message.reply_text("欢迎使用winpay小秘书，我将全天为你服务")
+
+    elif message_text == "停止记账":
         if username and username in operators.get(chat_id, {}):
+            print("匹配到 '停止记账' 指令")
+            is_accounting_enabled[chat_id] = False  # 暂停记账功能
+            await update.message.reply_text("已暂停记账功能")
+
+    elif message_text == "恢复记账":
+        if username and username in operators.get(chat_id, {}):
+            print("匹配到 '恢复记账' 指令")
+            is_accounting_enabled[chat_id] = True  # 恢复记账功能
+            await update.message.reply_text("记账功能已恢复")
+
+    elif message_text == "说明":
+        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
             print("匹配到 '说明' 指令")
             help_text = """
 可用指令：
@@ -193,8 +212,9 @@ async def handle_message(update, context):
 查看操作员：操作员列表
             """
             await update.message.reply_text(help_text)
+
     elif (message_text.startswith("入款") or message_text.startswith("+")) and message_text != "+0":
-        if username and username in operators.get(chat_id, {}):
+        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
             print(f"匹配到 '入款' 或 '+' 指令，金额: {message_text.replace('入款', '').replace('+', '').strip()}")
             try:
                 amount_str = message_text.replace("入款", "").replace("+", "").strip()
@@ -216,8 +236,9 @@ async def handle_message(update, context):
                 await handle_bill(update, context)
             except ValueError:
                 await update.message.reply_text("请输入正确金额，例如：入款1000 或 +1000 或 +100u")
+
     elif message_text.startswith("下发"):
-        if username and username in operators.get(chat_id, {}):
+        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
             print(f"匹配到 '下发' 指令，金额: {message_text.replace('下发', '').strip()}")
             try:
                 amount_str = message_text.replace("下发", "").strip()
@@ -239,8 +260,9 @@ async def handle_message(update, context):
                 await handle_bill(update, context)
             except ValueError:
                 await update.message.reply_text("请输入正确金额，例如：下发500 或 下发50u")
+
     elif message_text.startswith("设置操作员"):
-        if username and username in operators.get(chat_id, {}):
+        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
             print(f"匹配到 '设置操作员' 指令，参数: {message_text.replace('设置操作员', '').strip()}")
             operator = message_text.replace("设置操作员", "").strip()
             if operator.startswith("@"):
@@ -251,8 +273,9 @@ async def handle_message(update, context):
                 await update.message.reply_text(f"已将 @{operator} 设置为操作员")
             else:
                 await update.message.reply_text("请使用格式：设置操作员 @用户名")
+
     elif message_text.startswith("删除操作员"):
-        if username and username in operators.get(chat_id, {}):
+        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
             print(f"匹配到 '删除操作员' 指令，参数: {message_text.replace('删除操作员', '').strip()}")
             operator = message_text.replace("删除操作员", "").strip()
             if operator.startswith("@"):
@@ -264,8 +287,9 @@ async def handle_message(update, context):
                     await update.message.reply_text(f"@{operator} 不是操作员")
             else:
                 await update.message.reply_text("请使用格式：删除操作员 @用户名")
+
     elif message_text.startswith("设置入款汇率"):
-        if username and username in operators.get(chat_id, {}):
+        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
             print(f"匹配到 '设置入款汇率' 指令，汇率: {message_text.replace('设置入款汇率', '').strip()}")
             try:
                 rate = float(message_text.replace("设置入款汇率", "").strip())
@@ -273,8 +297,9 @@ async def handle_message(update, context):
                 await update.message.reply_text(f"设置成功入款汇率 {format_exchange_rate(exchange_rate_deposit)}")
             except ValueError:
                 await update.message.reply_text("请输入正确汇率，例如：设置入款汇率0.98")
+
     elif message_text.startswith("设置入款费率"):
-        if username and username in operators.get(chat_id, {}):
+        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
             print(f"匹配到 '设置入款费率' 指令，费率: {message_text.replace('设置入款费率', '').strip()}")
             try:
                 rate = float(message_text.replace("设置入款费率", "").strip()) / 100
@@ -282,8 +307,9 @@ async def handle_message(update, context):
                 await update.message.reply_text(f"设置成功入款费率 {int(rate*100)}%")
             except ValueError:
                 await update.message.reply_text("请输入正确费率，例如：设置入款费率8")
+
     elif message_text.startswith("设置下发汇率"):
-        if username and username in operators.get(chat_id, {}):
+        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
             print(f"匹配到 '设置下发汇率' 指令，汇率: {message_text.replace('设置下发汇率', '').strip()}")
             try:
                 rate = float(message_text.replace("设置下发汇率", "").strip())
@@ -291,8 +317,9 @@ async def handle_message(update, context):
                 await update.message.reply_text(f"设置成功下发汇率 {format_exchange_rate(exchange_rate_withdraw)}")
             except ValueError:
                 await update.message.reply_text("请输入正确汇率，例如：设置下发汇率1.25")
+
     elif message_text.startswith("设置下发费率"):
-        if username and username in operators.get(chat_id, {}):
+        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
             print(f"匹配到 '设置下发费率' 指令，费率: {message_text.replace('设置下发费率', '').strip()}")
             try:
                 rate = float(message_text.replace("设置下发费率", "").strip()) / 100
@@ -300,12 +327,14 @@ async def handle_message(update, context):
                 await update.message.reply_text(f"设置成功下发费率 {int(rate*100)}%")
             except ValueError:
                 await update.message.reply_text("请输入正确费率，例如：设置下发费率8")
+
     elif message_text == "账单" or message_text == "+0":
-        if username and username in operators.get(chat_id, {}):
+        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
             print("匹配到 '账单' 或 '+0' 指令")
             await handle_bill(update, context)
+
     elif message_text == "删除":
-        if username and username in operators.get(chat_id, {}):
+        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
             print("匹配到 '删除' 指令")
             if update.message.reply_to_message:
                 original_message = update.message.reply_to_message.text.strip()
@@ -339,34 +368,39 @@ async def handle_message(update, context):
                 await update.message.reply_text("无法撤销此消息，请确保回复正确的入款或下发记录")
             else:
                 await update.message.reply_text("请回复目标交易相关消息以删除")
+
     elif message_text == "删除账单":
-        if username and username in operators.get(chat_id, {}):
+        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
             print("匹配到 '删除账单' 指令")
             transactions[chat_id].clear()
             await update.message.reply_text("今日已清账💰，重新开始记账")
+
     elif message_text == "日切" and username == initial_admin_username:
-        if username in operators.get(chat_id, {}):
+        if username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
             print("匹配到 '日切' 指令")
             transactions[chat_id].clear()
             await update.message.reply_text("交易记录已清空")
+
     elif message_text == "操作员列表":
-        if username and username in operators.get(chat_id, {}):
+        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
             print("匹配到 '操作员列表' 指令")
             op_list = ", ".join([f"@{op}" for op in operators.get(chat_id, {})])
             await update.message.reply_text(f"当前操作员列表: {op_list}" if op_list else "当前无操作员")
+
     elif re.match(r'^[T][a-km-zA-HJ-NP-Z1-9]{33}$', message_text):
-        print("匹配到 TRX 地址验证")
-        chat_id = str(update.message.chat_id)
-        current_user = f"@{username}" if username else "未知用户"
-        address_verify_count[chat_id]["count"] += 1
-        last_user = address_verify_count[chat_id]["last_user"] or "无"
-        address_verify_count[chat_id]["last_user"] = current_user
-        await update.message.reply_text(
-            f"{message_text}\n"
-            f"验证次数：{address_verify_count[chat_id]['count']}\n"
-            f"本次发送人：{current_user}\n"
-            f"上次发送人：{last_user}"
-        )
+        if is_accounting_enabled.get(chat_id, True):
+            print("匹配到 TRX 地址验证")
+            chat_id = str(update.message.chat_id)
+            current_user = f"@{username}" if username else "未知用户"
+            address_verify_count[chat_id]["count"] += 1
+            last_user = address_verify_count[chat_id]["last_user"] or "无"
+            address_verify_count[chat_id]["last_user"] = current_user
+            await update.message.reply_text(
+                f"{message_text}\n"
+                f"验证次数：{address_verify_count[chat_id]['count']}\n"
+                f"本次发送人：{current_user}\n"
+                f"上次发送人：{last_user}"
+            )
 
 # 主函数
 def main():
