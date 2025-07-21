@@ -171,6 +171,9 @@ async def handle_message(update, context):
     print(f"当前群组操作员列表: {operators.get(chat_id, {})}")
     print(f"当前全局操作员列表: {global_operators}")
 
+    # 添加调度检查
+    schedule.run_pending()
+
     if chat_id not in operators:
         operators[chat_id] = {initial_admin_username: True}
     if chat_id not in transactions:
