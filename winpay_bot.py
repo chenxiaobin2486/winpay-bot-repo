@@ -145,7 +145,7 @@ async def handle_chat_member(update: telegram.Update, context: telegram.ext.Cont
         joined_chats.add(chat_id)
         logger.info(f"机器人加入新群: {chat_id}")
 
-# 处理所有消息（保持不变）
+# 处理所有消息（保持不变，但移除获取群 ID 逻辑）
 async def handle_message(update, context):
     global exchange_rate_deposit, deposit_fee_rate, exchange_rate_withdraw, withdraw_fee_rate, operators, transactions, user_history, address_verify_count
     global is_accounting_enabled, team_groups, scheduled_tasks, last_file_id, templates
@@ -404,41 +404,13 @@ async def handle_message(update, context):
             last_file_id[chat_id] = file_id
             await update.message.reply_text(f"文件 ID: {file_id}")
 
-        if re.match(r'https?://t\.me/\+\w+', message_text):
-            logger.info(f"Attempting to parse invite link: {message_text}")
-            try:
-                found = False
-                for cid in joined_chats:
-                    try:
-                        chat = await context.bot.get_chat(cid)
-                        if chat.invite_link == message_text or chat.username:
-                            await update.message.reply_text(f"群 ID: {cid}")
-                            found = True
-                            break
-                    except telegram.error.TelegramError:
-                        continue
-                if not found:
-                    await update.message.reply_text("链接无效请检查: 机器人可能未加入该群。请添加机器人至群组并重试。")
-            except telegram.error.TelegramError as e:
-                logger.error(f"Telegram error: {e}")
-                await update.message.reply_text(f"链接无效请检查: {str(e)}. 请确保机器人已加入群组。")
-
         if message_text == "群发说明":
             help_text = """
 ### 群发指令说明
 
 **注意**：此说明仅在私聊中通过指令 `群发说明` 查看，所有群发相关功能仅在私聊中有效，所有操作员均可使用。
 
-1. **获取群 ID 的方式**  
-   - 方法：  
-     1. 打开 Telegram 应用，进入目标群聊。  
-     2. 点击群聊名称进入群组信息页面。  
-     3. 点击“添加成员”或“邀请链接”（需要管理员权限），复制邀请链接（例如 `https://t.me/+nW4I6Y81dec5MWE1`）。  
-     4. 在私聊中直接发送该链接给机器人。  
-   - 功能：机器人自动解析链接，成功时回复“群 ID: -1001234567890”，失败时回复“链接无效请检查”。  
-   - 注意：确保链接有效，机器人需已加入该群。
-
-2. **编辑模板**  
+1. **编辑模板**  
    - 指令：`编辑 模板名 广告文`  
    - 功能：创建或更新指定模板名对应的广告文，并自动关联最近在私聊发送的动图、视频或图片文件 ID。  
    - 示例：  
@@ -447,32 +419,32 @@ async def handle_message(update, context):
      - 结果：模板 `模板1` 记录广告文“欢迎体验我们的服务！”及相关文件 ID。  
    - 注意：若模板已存在，则覆盖原有内容。
 
-3. **创建群发任务**  
+2. **创建群发任务**  
    - 指令：`任务 队名 时间 模板名`  
    - 功能：为指定编队（队名）设置群发任务，使用指定模板的广告文和文件 ID，时间格式为 `HH:MM`（24小时制）。  
    - 示例：`任务 广告队 17:00 模板1`  
    - 结果：机器人生成唯一任务 ID（例如 `12345`），回复“任务已创建，任务 ID: 12345，请回复 `确认 12345` 执行”。  
    - 时间处理：以服务器时间（+07）为准，若时间已过当天自动调整为次日。
 
-4. **确认任务**  
+3. **确认任务**  
    - 指令：`确认 任务ID`  
    - 功能：确认执行指定任务 ID 对应的群发任务。  
    - 示例：`确认 12345`  
    - 结果：任务按设定时间执行，向编队中的所有群组发送模板内容。
 
-5. **取消任务**  
+4. **取消任务**  
    - 指令：`任务 队名 -1`  
    - 功能：取消指定队名的待执行任务。  
    - 示例：`任务 广告队 -1`  
    - 结果：若存在对应队名的任务，则取消并回复“任务已取消”。
 
-6. **创建/更新编队**  
+5. **创建/更新编队**  
    - 指令：`编队 队名 群ID, 群ID`  
    - 功能：创建或更新指定队名对应的群组列表，使用逗号分隔多个群 ID。  
    - 示例：`编队 广告队 -1001234567890, -1009876543210`  
    - 结果：成功时回复“编队已更新”，若群 ID 无效则回复“任务目标有误请检查”。
 
-7. **从编队删除群组**  
+6. **从编队删除群组**  
    - 指令：`删除 队名 群ID, 群ID`  
    - 功能：从指定队名中删除一个或多个群 ID。  
    - 示例：`删除 广告队 -1001234567890`  
@@ -590,17 +562,17 @@ async def send_broadcast(context, task):
             except Exception as e:
                 logger.error(f"发送至群组 {group_id} 失败: {e}")
 
-# 初始化已加入群的列表
-async def initialize_joined_chats(context):
-    global joined_chats
-    try:
-        updates = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates").json()
-        for update in updates.get("result", []):
-            if "message" in update and "chat" in update["message"] and update["message"]["chat"]["type"] in ["group", "supergroup"]:
-                joined_chats.add(str(update["message"]["chat"]["id"]))
-        logger.info(f"初始化已加入群: {joined_chats}")
-    except requests.RequestException as e:
-        logger.error(f"初始化群列表失败: {e}")
+# 初始化已加入群的列表（移除）
+# async def initialize_joined_chats(context):
+#     global joined_chats
+#     try:
+#         updates = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getUpdates").json()
+#         for update in updates.get("result", []):
+#             if "message" in update and "chat" in update["message"] and update["message"]["chat"]["type"] in ["group", "supergroup"]:
+#                 joined_chats.add(str(update["message"]["chat"]["id"]))
+#         logger.info(f"初始化已加入群: {joined_chats}")
+#     except requests.RequestException as e:
+#         logger.error(f"初始化群列表失败: {e}")
 
 # 主函数（修正事件循环管理）
 async def main():
@@ -611,8 +583,8 @@ async def main():
     application = Application.builder().token(BOT_TOKEN).build()
     await application.initialize()
 
-    # 初始化已加入群的列表
-    await initialize_joined_chats(application)
+    # 初始化已加入群的列表（移除调用）
+    # await initialize_joined_chats(application)
 
     # 添加处理程序
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
