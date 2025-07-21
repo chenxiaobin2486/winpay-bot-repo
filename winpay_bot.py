@@ -233,13 +233,14 @@ async def handle_message(update, context):
         if username and username in operators.get(chat_id, {}):
             logger.info(f"匹配到 '入款' 或 '+' 指令，原始消息: {message_text}")
             try:
-                # 使用修正的正则表达式提取金额
-                amount_match = re.search(r'^(\+|\b入款\b|\b下发\b)\s*(\d+(\.\d+)?[uU]?)', message_text, re.IGNORECASE)
+                # 优化正则表达式以正确提取金额
+                amount_match = re.search(r'^\+?\s*(\d+(\.\d+)?[uU]?)|\b(入款|下发)\s+(\d+(\.\d+)?[uU]?)', message_text, re.IGNORECASE)
                 if not amount_match:
                     raise ValueError("无效金额格式")
-                amount_str = amount_match.group(2).strip() if amount_match.group(2) else None
+                amount_str = amount_match.group(1) if amount_match.group(1) else amount_match.group(4)
                 if not amount_str:
                     raise ValueError("未找到有效金额")
+                amount_str = amount_str.strip()
                 beijing_tz = pytz.timezone("Asia/Shanghai")
                 utc_time = update.message.date.replace(tzinfo=timezone.utc)
                 timestamp = utc_time.astimezone(beijing_tz).strftime("%H:%M")
@@ -262,13 +263,14 @@ async def handle_message(update, context):
         if username and username in operators.get(chat_id, {}):
             logger.info(f"匹配到 '下发' 指令，原始消息: {message_text}")
             try:
-                # 使用修正的正则表达式提取金额
-                amount_match = re.search(r'^(\+|\b入款\b|\b下发\b)\s*(\d+(\.\d+)?[uU]?)', message_text, re.IGNORECASE)
+                # 优化正则表达式以正确提取金额
+                amount_match = re.search(r'^\+?\s*(\d+(\.\d+)?[uU]?)|\b(入款|下发)\s+(\d+(\.\d+)?[uU]?)', message_text, re.IGNORECASE)
                 if not amount_match:
                     raise ValueError("无效金额格式")
-                amount_str = amount_match.group(2).strip() if amount_match.group(2) else None
+                amount_str = amount_match.group(1) if amount_match.group(1) else amount_match.group(4)
                 if not amount_str:
                     raise ValueError("未找到有效金额")
+                amount_str = amount_str.strip()
                 beijing_tz = pytz.timezone("Asia/Shanghai")
                 utc_time = update.message.date.replace(tzinfo=timezone.utc)
                 timestamp = utc_time.astimezone(beijing_tz).strftime("%H:%M")
@@ -437,34 +439,6 @@ async def handle_message(update, context):
             last_file_id[chat_id] = file_id
             await update.message.reply_text(f"文件 ID: {file_id}")
 
-        # 自动解析邀请链接
-        if re.match(r'https?://t\.me/\+\w+', message_text):
-            logger.info(f"Attempting to parse invite link: {message_text}")
-            try:
-                # 尝试使用 joinChat 加入群组
-                join_response = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/joinChat?invite_link={message_text}")
-                join_data = join_response.json()
-                logger.info(f"Join response: {join_data}")
-                if join_data.get("ok"):
-                    # 加入成功后获取群 ID
-                    chat_response = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getChat?chat_id={message_text.split('+')[1]}")
-                    chat_data = chat_response.json()
-                    logger.info(f"GetChat response: {chat_data}")
-                    if chat_data.get("ok"):
-                        group_chat_id = str(chat_data["result"]["id"])
-                        await update.message.reply_text(f"群 ID: {group_chat_id}")
-                    else:
-                        error_desc = chat_data.get("description", "Unknown error")
-                        logger.error(f"GetChat error: {error_desc}")
-                        await update.message.reply_text(f"链接解析失败: {error_desc}. 请检查链接有效性。")
-                else:
-                    error_desc = join_data.get("description", "Unknown error")
-                    logger.error(f"Join error: {error_desc}")
-                    await update.message.reply_text(f"链接无效请检查: {error_desc}. 请确保链接有效且机器人有权限加入。")
-            except requests.RequestException as e:
-                logger.error(f"Request failed: {e}")
-                await update.message.reply_text("链接无效请检查: 网络错误或API调用失败")
-
         # 显示群发说明
         if message_text == "群发说明":
             help_text = """
@@ -476,10 +450,9 @@ async def handle_message(update, context):
    - 方法：  
      1. 打开 Telegram 应用，进入目标群聊。  
      2. 点击群聊名称进入群组信息页面。  
-     3. 点击“添加成员”或“邀请链接”（需要管理员权限），复制邀请链接（例如 `https://t.me/+nW4I6Y81dec5MWE1`）。  
-     4. 在私聊中直接发送该链接给机器人。  
-   - 功能：机器人自动解析链接，成功时回复“群 ID: -1001234567890”，失败时回复“链接无效请检查”。  
-   - 注意：确保链接有效，机器人需有权限加入该群。
+     3. 点击“添加成员”或“邀请链接”（需要管理员权限），复制群 ID（例如 `-1001234567890`）。  
+     4. 在私聊中手动输入群 ID 使用 `编队` 指令。  
+   - 注意：群 ID 需为数字格式，例如 `-1001234567890`。
 
 2. **编辑模板**  
    - 指令：`编辑 模板名 广告文`  
