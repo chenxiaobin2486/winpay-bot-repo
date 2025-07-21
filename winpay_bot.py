@@ -317,6 +317,33 @@ async def handle_message(update, context):
             except ValueError:
                 await update.message.reply_text("请输入正确费率，例如：设置下发费率8")
 
+    elif message_text.startswith("设置操作员"):
+        if username and username in operators.get(chat_id, {}):
+            logger.info(f"匹配到 '设置操作员' 指令，参数: {message_text.replace('设置操作员', '').strip()}")
+            operator = message_text.replace("设置操作员", "").strip()
+            if operator.startswith("@"):
+                operator = operator[1:]  # 移除 @ 符号
+                if chat_id not in operators:
+                    operators[chat_id] = {}
+                operators[chat_id][operator] = True
+                await update.message.reply_text(f"已将 @{operator} 设置为操作员")
+            else:
+                await update.message.reply_text("请使用格式：设置操作员 @用户名")
+
+    elif message_text.startswith("删除操作员"):
+        if username and username in operators.get(chat_id, {}):
+            logger.info(f"匹配到 '删除操作员' 指令，参数: {message_text.replace('删除操作员', '').strip()}")
+            operator = message_text.replace("删除操作员", "").strip()
+            if operator.startswith("@"):
+                operator = operator[1:]  # 移除 @ 符号
+                if chat_id in operators and operator in operators[chat_id]:
+                    del operators[chat_id][operator]
+                    await update.message.reply_text(f"已删除 @{operator} 的操作员权限")
+                else:
+                    await update.message.reply_text(f"@{operator} 不是操作员")
+            else:
+                await update.message.reply_text("请使用格式：删除操作员 @用户名")
+
     elif message_text == "账单" or message_text == "+0":
         if username and username in operators.get(chat_id, {}):
             logger.info("匹配到 '账单' 或 '+0' 指令")
