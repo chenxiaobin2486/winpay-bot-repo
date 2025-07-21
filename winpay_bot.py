@@ -607,8 +607,9 @@ async def main():
     port = int(os.getenv("PORT", "10000"))
     logger.info(f"Listening on port: {port}")
 
-    # 创建 Application 实例
+    # 创建并初始化 Application 实例
     application = Application.builder().token(BOT_TOKEN).build()
+    await application.initialize()
 
     # 初始化已加入群的列表
     await initialize_joined_chats(application)
@@ -634,8 +635,8 @@ async def main():
 
     try:
         logger.info("尝试启动 Webhook...")
-        # 使用现有事件循环运行 Webhook
-        loop = asyncio.get_event_loop()
+        # 使用当前运行的事件循环
+        loop = asyncio.get_running_loop()
         await application.run_webhook(
             listen="0.0.0.0",
             port=port,
