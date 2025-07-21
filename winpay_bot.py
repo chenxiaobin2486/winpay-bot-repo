@@ -613,7 +613,7 @@ def main():
     application = Application.builder().token(BOT_TOKEN).build()
 
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
-    application.add_handler(MessageHandler(filters.PHOTO & filters.PRIVATE, handle_photo))
+    application.add_handler(MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, handle_photo))
     application.add_handler(MessageHandler(filters.ANIMATION & filters.PRIVATE, handle_animation))
     application.add_handler(MessageHandler(filters.VIDEO & filters.PRIVATE, handle_video))
     application.add_handler(MessageHandler(telegram.ext.filters.TEXT, handle_text))
