@@ -233,12 +233,11 @@ async def handle_message(update, context):
         if username and username in operators.get(chat_id, {}):
             logger.info(f"匹配到 '入款' 或 '+' 指令，原始消息: {message_text}")
             try:
-                # 使用正则表达式提取金额
-                import re
-                amount_match = re.search(r'\d+(\.\d+)?[uU]?', message_text)
+                # 使用改进的正则表达式提取金额
+                amount_match = re.search(r'(?<=入款|下发|\+|^)\s*(\d+(\.\d+)?[uU]?)', message_text, re.IGNORECASE)
                 if not amount_match:
                     raise ValueError("无效金额格式")
-                amount_str = amount_match.group(0)
+                amount_str = amount_match.group(1).strip()
                 beijing_tz = pytz.timezone("Asia/Shanghai")
                 utc_time = update.message.date.replace(tzinfo=timezone.utc)
                 timestamp = utc_time.astimezone(beijing_tz).strftime("%H:%M")
@@ -258,12 +257,11 @@ async def handle_message(update, context):
         if username and username in operators.get(chat_id, {}):
             logger.info(f"匹配到 '下发' 指令，原始消息: {message_text}")
             try:
-                # 使用正则表达式提取金额
-                import re
-                amount_match = re.search(r'\d+(\.\d+)?[uU]?', message_text)
+                # 使用改进的正则表达式提取金额
+                amount_match = re.search(r'(?<=入款|下发|\+|^)\s*(\d+(\.\d+)?[uU]?)', message_text, re.IGNORECASE)
                 if not amount_match:
                     raise ValueError("无效金额格式")
-                amount_str = amount_match.group(0)
+                amount_str = amount_match.group(1).strip()
                 beijing_tz = pytz.timezone("Asia/Shanghai")
                 utc_time = update.message.date.replace(tzinfo=timezone.utc)
                 timestamp = utc_time.astimezone(beijing_tz).strftime("%H:%M")
