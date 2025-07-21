@@ -12,14 +12,22 @@ import string
 import logging
 
 # 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.FileHandler('/var/log/winpay_bot.log'),  # Render 可访问的日志路径
-        logging.StreamHandler()  # 同时输出到终端
-    ]
-)
+try:
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        handlers=[
+            logging.FileHandler('./winpay_bot.log'),  # 写入项目根目录，Render可写
+            logging.StreamHandler()  # 同时输出到控制台
+        ]
+    )
+except PermissionError as e:
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        handlers=[logging.StreamHandler()]  # 仅输出到控制台
+    )
+    logging.error(f"无法写入日志文件 './winpay_bot.log': {e}")
 logger = logging.getLogger(__name__)
 
 # 定义 Bot Token（从环境变量获取）
@@ -460,7 +468,7 @@ async def handle_text(update, context):
 
     elif message_text == "日切" and username == initial_admin_username:
         if username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
-            logger.info(f"匹配到 '日切' 指令, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_title}' (ID: {chat_id})")
+            logger.info(f"匹配到 '日切' 指令, 在{'群组' if chat_type != 'private' else '私聊'} '{chat_id})")
             transactions[chat_id].clear()
             await update.message.reply_text("交易记录已清空")
 
@@ -649,7 +657,7 @@ async def handle_text(update, context):
 # 主函数
 async def main():
     port = int(os.getenv("PORT", "10000"))
-    logger.info(f"Listening on port: {port}")
+    logger.info(f"监听端口: {port}")
 
     application = Application.builder().token(BOT_TOKEN).build()
 
