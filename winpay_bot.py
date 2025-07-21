@@ -46,7 +46,7 @@ async def handle_bill(update, context):
         for t in reversed([t for t in recent_transactions if t.startswith("入款")]):
             parts = t.split(" -> ")
             timestamp = parts[0].split()[2]
-            operator = parts[1].split(" (由 ")[0] if " (由 " in parts[1] else parts[1]
+            operator = parts[1]
             if "u" in parts[0]:
                 amount = float(parts[0].split()[1].rstrip('u'))
                 bill += f"{timestamp}  {format_amount(amount)}u {operator}\n"
@@ -64,7 +64,7 @@ async def handle_bill(update, context):
         for t in reversed([t for t in recent_transactions if t.startswith("下发")]):
             parts = t.split(" -> ")
             timestamp = parts[0].split()[2]
-            operator = parts[1].split(" (由 ")[0] if " (由 " in parts[1] else parts[1]
+            operator = parts[1]
             if "u" in parts[0]:
                 amount = float(parts[0].split()[1].rstrip('u'))
                 bill += f"{timestamp}  {format_amount(amount)}u {operator}\n"
