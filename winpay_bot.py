@@ -240,10 +240,6 @@ async def handle_message(update, context):
                 if amount_str.lower().endswith('u'):
                     amount = float(amount_str.rstrip('uU'))
                     transaction = f"入款 {format_amount(amount)}u {timestamp} -> {format_amount(amount)}u ({operator_name})"
-                elif amount_str.endswith(".0") or amount_str.endswith(".00"):
-                    amount = float(amount_str.rstrip('.0').rstrip('.00'))
-                    adjusted_amount = amount * (1 - deposit_fee_rate) / exchange_rate_deposit
-                    transaction = f"入款 {format_amount(amount)} {timestamp} -> {format_amount(adjusted_amount)}u ({operator_name})"
                 else:
                     amount = float(amount_str)
                     adjusted_amount = amount * (1 - deposit_fee_rate) / exchange_rate_deposit
@@ -264,10 +260,6 @@ async def handle_message(update, context):
                 if amount_str.lower().endswith('u'):
                     amount = float(amount_str.rstrip('uU'))
                     transaction = f"下发 {format_amount(amount)}u {timestamp} -> {format_amount(amount)}u ({operator_name})"
-                elif amount_str.endswith(".0") or amount_str.endswith(".00"):
-                    amount = float(amount_str.rstrip('.0').rstrip('.00'))
-                    adjusted_amount = amount * (1 + withdraw_fee_rate) / exchange_rate_withdraw
-                    transaction = f"下发 {format_amount(amount)} {timestamp} -> {format_amount(adjusted_amount)}u ({operator_name})"
                 else:
                     amount = float(amount_str)
                     adjusted_amount = amount * (1 + withdraw_fee_rate) / exchange_rate_withdraw
