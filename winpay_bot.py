@@ -1,8 +1,6 @@
 # 导入必要的模块
 from telegram.ext import Application, MessageHandler, filters, ApplicationBuilder
 import telegram.ext
-import schedule
-import time
 import re
 import os
 import asyncio
@@ -27,14 +25,6 @@ scheduled_tasks = {}  # {任务ID: {"team": 队名, "template": 模板名, "time
 last_file_id = {}  # {chat_id: 文件ID}
 last_file_message = {}  # {chat_id: {"file_id": str, "caption": str or None}}，记录最近文件消息
 templates = {}  # {模板名: {"message": 广告文, "file_id": 文件ID}}
-
-# 设置日志任务
-def setup_schedule():
-    schedule.every().day.at("00:00").do(lambda: asyncio.run(job()))
-
-# 定义日志功能
-async def job():
-    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 执行日志任务")
 
 # 账单处理函数
 async def handle_bill(update, context):
@@ -131,7 +121,7 @@ async def welcome_new_member(update: telegram.Update, context: telegram.ext.Cont
             timestamp = datetime.now(pytz.timezone("Asia/Bangkok")).strftime("%Y年%m月%d日 %H:%M")
 
             user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
-            await context.bot.send_message(chat_id=chat_id, text=f"欢迎 {nickname} 来到本群，入金叫卡找winpay")
+            await context.bot.send_message(chat_id=chat_id, text=f"欢迎 {nickname} 来到本群，winpay是你最好的选择")
 
             # 检测昵称/用户名不一致
             if user_id in user_history[chat_id]:
@@ -273,7 +263,7 @@ async def handle_message(update, context):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '开始' 指令")
             transactions[chat_id].clear()  # 清空当前账单，重新开始记账
             is_accounting_enabled[chat_id] = True  # 确保启用记账
-            await context.bot.send_message(chat_id=chat_id, text="欢迎使用winpay小秘书，入金叫卡winpay是您最好的选择")
+            await context.bot.send_message(chat_id=chat_id, text="欢迎使用winpay小秘书，我将全天为你服务")
 
     elif message_text == "停止记账":
         if is_operator:
@@ -740,12 +730,6 @@ async def handle_message(update, context):
             else:
                 await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可查看任务列表，请联系管理员设置权限")
 
-# 调度任务循环
-async def run_schedule():
-    while True:
-        schedule.run_pending()
-        await asyncio.sleep(1)  # 每秒检查一次调度任务
-
 # 主函数
 def main():
     port = int(os.getenv("PORT", "10000"))
@@ -763,8 +747,6 @@ def main():
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
     application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL | filters.ANIMATION | filters.VIDEO, handle_message))
 
-    setup_schedule()
-
     external_url = os.getenv("RENDER_EXTERNAL_URL", "winpay-bot-repo.onrender.com").strip()
     if not external_url:
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 错误：RENDER_EXTERNAL_URL 未设置")
@@ -776,8 +758,6 @@ def main():
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 设置 Webhook URL: {webhook_url}")
     try:
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 尝试启动 Webhook...")
-        # 启动调度任务
-        loop.create_task(run_schedule())
         # 运行 Webhook
         loop.run_until_complete(
             application.run_webhook(
@@ -788,7 +768,7 @@ def main():
             )
         )
     except Exception as e:
-        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Webhook 设置失败: {e}")
+        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')]] Webhook 设置失败: {e}")
     finally:
         loop.run_until_complete(application.shutdown())
         loop.close()
