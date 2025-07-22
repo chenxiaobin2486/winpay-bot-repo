@@ -131,7 +131,7 @@ async def welcome_new_member(update: telegram.Update, context: telegram.ext.Cont
             timestamp = datetime.now(pytz.timezone("Asia/Bangkok")).strftime("%Y年%m月%d日 %H:%M")
 
             user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
-            await context.bot.send_message(chat_id=chat_id, text=f"欢迎 {nickname} 来到本群，winpay是你最好的选择")
+            await context.bot.send_message(chat_id=chat_id, text=f"欢迎 {nickname} 来到本群，入金叫卡找winpay")
 
             # 检测昵称/用户名不一致
             if user_id in user_history[chat_id]:
@@ -368,12 +368,11 @@ async def handle_message(update, context):
                 operator = operator[1:]
                 if chat_id not in operators:
                     operators[chat_id] = {}
-                operators[chat_id][operator] = True  # 仅为当前群组设置操作员
-                # 仅在私聊中也添加权限（仅限新私聊初始化）
-                if update.message.chat.type == "private":
-                    if "private" not in operators:
-                        operators["private"] = {}
-                    operators["private"][operator] = True
+                operators[chat_id][operator] = True  # 为当前群组设置操作员
+                # 同时为私聊机器人添加权限
+                if "private" not in operators:
+                    operators["private"] = {}
+                operators["private"][operator] = True
                 await context.bot.send_message(chat_id=chat_id, text=f"已将 @{operator} 设置为操作员")
             else:
                 await context.bot.send_message(chat_id=chat_id, text="请使用格式：设置操作员 @用户名")
@@ -427,7 +426,7 @@ async def handle_message(update, context):
 
     elif message_text.startswith("设置下发费率"):
         if is_operator and is_accounting_enabled.get(chat_id, True):
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '设置下发费率' 指令，费率: {message_text.replace('设置下发费率', '').strip()}")
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')]] 匹配到 '设置下发费率' 指令，费率: {message_text.replace('设置下发费率', '').strip()}")
             try:
                 rate = float(message_text.replace("设置下发费率", "").strip()) / 100
                 exchange_rates[chat_id]["withdraw_fee"] = rate
