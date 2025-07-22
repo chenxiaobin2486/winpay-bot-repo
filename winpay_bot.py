@@ -8,7 +8,7 @@ from datetime import datetime, timezone, timedelta
 import pytz
 import random
 import string
-import schedule  # 添加 schedule 模块
+import schedule
 
 # 定义 Bot Token（从环境变量获取）
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7908773608:AAFFqLmGkJ9zbsuymQTFzJxy5IyeN1E9M-U")
@@ -156,10 +156,10 @@ async def send_broadcast(context, task):
 
 # 心跳检测函数
 async def heartbeat():
-    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 心跳检测，保持活跃")
+    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 心跳检测保持活跃")
 
 async def run_schedule():
-    schedule.every(5).minutes.do(lambda: asyncio.run(heartbeat()))
+    schedule.every(5).minutes.do(lambda: asyncio.create_task(heartbeat()))  # 使用 create_task 调度协程
     while True:
         schedule.run_pending()
         await asyncio.sleep(60)  # 每分钟检查一次
@@ -284,7 +284,7 @@ async def handle_message(update, context):
 
     elif message_text == "恢复记账":
         if is_operator:
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '恢复记账' 指令")
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}) 匹配到 '恢复记账' 指令")
             is_accounting_enabled[chat_id] = True  # 恢复记账功能
             await context.bot.send_message(chat_id=chat_id, text="记账功能已恢复")
 
