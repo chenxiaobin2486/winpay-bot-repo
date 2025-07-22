@@ -1,3 +1,168 @@
+# 导入必要的模块
+from telegram.ext import Application, MessageHandler, filters, ApplicationBuilder
+import telegram.ext
+import schedule
+import time
+import re
+import os
+import asyncio
+from datetime import datetime, timezone, timedelta
+import pytz
+import random
+import string
+
+# 定义 Bot Token（从环境变量获取）
+BOT_TOKEN = os.getenv("BOT_TOKEN", "7908773608:AAFFqLmGkJ9zbsuymQTFzJxy5IyeN1E9M-U")
+
+# 定义全局变量
+initial_admin_username = "WinPay06_Thomason"  # 初始最高权限管理员用户名
+operators = {}  # {chat_id: {username: True}}，包括群组和私聊 ("private") 的操作员列表
+transactions = {}  # {chat_id: [transaction_list]}，每个群组独立记账
+user_history = {}  # {chat_id: {user_id: {"username": str, "first_name": str}}}，记录成员历史
+exchange_rates = {}  # {chat_id: {"deposit": float, "withdraw": float, "deposit_fee": float, "withdraw_fee": float}}，每个群组独立汇率和费率
+address_verify_count = {}  # {chat_id: {"count": int, "last_user": str}}，记录地址验证次数和上次发送人
+is_accounting_enabled = {}  # {chat_id: bool}，控制记账状态，默认为 True
+team_groups = {}  # {队名: [群ID列表]}
+scheduled_tasks = {}  # {任务ID: {"team": 队名, "template": 模板名, "time": 任务时间}}
+last_file_id = {}  # {chat_id: 文件ID}
+last_file_message = {}  # {chat_id: {"file_id": str, "caption": str or None}}，记录最近文件消息
+templates = {}  # {模板名: {"message": 广告文, "file_id": 文件ID}}
+
+# 设置日志任务
+def setup_schedule():
+    schedule.every().day.at("00:00").do(lambda: asyncio.run(job()))
+
+# 定义日志功能
+async def job():
+    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 执行日志任务")
+
+# 账单处理函数
+async def handle_bill(update, context):
+    chat_id = str(update.message.chat_id)
+    if chat_id not in transactions:
+        transactions[chat_id] = []
+    recent_transactions = transactions[chat_id][-6:] if len(transactions[chat_id]) >= 6 else transactions[chat_id]
+    bill = "当前账单\n"
+    deposit_count = sum(1 for t in recent_transactions if t.startswith("入款"))
+    withdraw_count = sum(1 for t in recent_transactions if t.startswith("下发"))
+
+    exchange_rate_deposit = exchange_rates.get(chat_id, {"deposit": 1.0})["deposit"]
+    deposit_fee_rate = exchange_rates.get(chat_id, {"deposit_fee": 0.0})["deposit_fee"]
+    exchange_rate_withdraw = exchange_rates.get(chat_id, {"withdraw": 1.0})["withdraw"]
+    withdraw_fee_rate = exchange_rates.get(chat_id, {"withdraw_fee": 0.0})["withdraw_fee"]
+
+    if deposit_count > 0:
+        bill += f"入款（{deposit_count}笔）\n"
+        for t in reversed([t for t in recent_transactions if t.startswith("入款")]):
+            parts = t.split(" -> ")
+            timestamp = parts[0].split()[2]
+            if len(parts) == 1:  # 无 ->，直接金额
+                amount = float(parts[0].split()[1].rstrip('u'))
+                bill += f"{timestamp}  {format_amount(amount)}u\n"
+            else:  # 有 ->，调整金额
+                amount = float(parts[0].split()[1].rstrip('u'))
+                adjusted = float(parts[1].split()[0].rstrip('u'))
+                effective_rate = 1 - deposit_fee_rate
+                bill += f"{timestamp}  {format_amount(amount)}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_deposit)}={format_amount(adjusted)}u\n"
+
+    if withdraw_count > 0:
+        if deposit_count > 0:
+            bill += "\n"
+        bill += f"出款（{withdraw_count}笔）\n"
+        for t in reversed([t for t in recent_transactions if t.startswith("下发")]):
+            parts = t.split(" -> ")
+            timestamp = parts[0].split()[2]
+            if len(parts) == 1:  # 无 ->，直接金额
+                amount = float(parts[0].split()[1].rstrip('u'))
+                bill += f"{timestamp}  {format_amount(amount)}u\n"
+            else:  # 有 ->，调整金额
+                amount = float(parts[0].split()[1].rstrip('u'))
+                adjusted = float(parts[1].split()[0].rstrip('u'))
+                effective_rate = 1 + withdraw_fee_rate
+                bill += f"{timestamp}  {format_amount(amount)}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_withdraw)}={format_amount(adjusted)}u\n"
+
+    if deposit_count > 0 or withdraw_count > 0:
+        if deposit_count > 0 or withdraw_count > 0:
+            bill += "\n"
+        if deposit_count > 0:
+            bill += f"入款汇率：{format_exchange_rate(exchange_rate_deposit)}  |  费率：{int(deposit_fee_rate*100)}%\n"
+        if withdraw_count > 0:
+            bill += f"出款汇率：{format_exchange_rate(exchange_rate_withdraw)}  |  费率：{int(withdraw_fee_rate*100)}%\n"
+        if deposit_count > 0 or withdraw_count > 0:
+            bill += "\n"
+        total_deposit = sum(float(t.split()[1].rstrip('u')) for t in transactions[chat_id] if t.startswith("入款"))
+        total_deposit_adjusted = sum(float(t.split(" -> ")[1].split()[0].rstrip('u')) if "->" in t else float(t.split()[1].rstrip('u')) for t in transactions[chat_id] if t.startswith("入款"))
+        total_withdraw = sum(float(t.split()[1].rstrip('u')) for t in transactions[chat_id] if t.startswith("下发"))
+        total_withdraw_adjusted = sum(float(t.split(" -> ")[1].split()[0].rstrip('u')) if "->" in t else float(t.split()[1].rstrip('u')) for t in transactions[chat_id] if t.startswith("下发"))
+        balance = total_deposit_adjusted - total_withdraw_adjusted
+        if deposit_count > 0:
+            bill += f"总入款：{format_amount(total_deposit)}  |  {format_amount(total_deposit_adjusted)}u\n"
+        if withdraw_count > 0:
+            bill += f"总出款：{format_amount(total_withdraw)}  |  {format_amount(total_withdraw_adjusted)}u\n"
+        bill += f"总余额：{format_amount(balance)}u"
+
+    await context.bot.send_message(chat_id=chat_id, text=bill if transactions[chat_id] else "无交易记录")
+
+# 格式化金额函数
+def format_amount(amount):
+    formatted = f"{amount:.2f}"
+    if formatted.endswith(".00"):
+        return str(int(amount))
+    return formatted
+
+# 格式化汇率函数
+def format_exchange_rate(rate):
+    formatted = f"{rate:.3f}"
+    if formatted.endswith("0"):
+        return f"{rate:.2f}"
+    return formatted
+
+# 欢迎新成员
+async def welcome_new_member(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.message.chat_id)
+    if chat_id not in user_history:
+        user_history[chat_id] = {}
+    if update.message and update.message.new_chat_members:
+        for member in update.message.new_chat_members:
+            user_id = str(member.id)
+            username = member.username
+            first_name = member.first_name.strip() if member.first_name else None
+            nickname = first_name or username or "新朋友"
+            timestamp = datetime.now(pytz.timezone("Asia/Bangkok")).strftime("%Y年%m月%d日 %H:%M")
+
+            user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
+            await context.bot.send_message(chat_id=chat_id, text=f"欢迎 {nickname} 来到本群，winpay是你最好的选择")
+
+            # 检测昵称/用户名不一致
+            if user_id in user_history[chat_id]:
+                old_data = user_history[chat_id][user_id].copy()
+                old_username = old_data["username"]
+                old_first_name = old_data["first_name"]
+                if username and username != old_username and first_name == old_first_name:
+                    warning = f"⚠️防骗提示⚠️ ({first_name}) 的用户名不一致\n之前用户名：@{old_username}\n现在用户名：@{username}\n修改时间：{timestamp}\n请注意查证‼️"
+                    await context.bot.send_message(chat_id=chat_id, text=warning)
+                    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 用户名变更警告: {first_name}, 之前 @{old_username}, 现在 @{username}")
+                elif first_name and first_name != old_first_name and username == old_username:
+                    warning = f"⚠️防骗提示⚠️ (@{username}) 的昵称不一致\n之前昵称：{old_first_name}\n现在昵称：{first_name}\n修改时间：{timestamp}\n请注意查证‼️"
+                    await context.bot.send_message(chat_id=chat_id, text=warning)
+                    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
+
+# 群发执行函数
+async def send_broadcast(context, task):
+    team_name = task["team"]
+    template_name = task["template"]
+    if team_name in team_groups and template_name in templates:
+        template = templates[template_name]
+        for group_id in team_groups[team_name]:
+            try:
+                if template["file_id"]:
+                    await context.bot.send_animation(chat_id=group_id, animation=template["file_id"], caption=template["message"])
+                else:
+                    await context.bot.send_message(chat_id=group_id, text=template["message"])
+                print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 已发送至群组 {group_id}")
+            except Exception as e:
+                print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 发送至群组 {group_id} 失败: {e}")
+
 # 处理所有消息
 async def handle_message(update, context):
     global operators, transactions, user_history, address_verify_count, is_accounting_enabled, exchange_rates, team_groups, scheduled_tasks, last_file_id, last_file_message, templates
@@ -224,7 +389,7 @@ async def handle_message(update, context):
                     # 仅在私聊中也删除权限（仅限新私聊初始化）
                     if update.message.chat.type == "private" and "private" in operators and operator in operators["private"]:
                         del operators["private"][operator]
-                    await context.bot.send_message(chat_id=chat_id, text=f"已将 @{operator} 设置为操作员")
+                    await context.bot.send_message(chat_id=chat_id, text=f"已删除 @{operator} 操作员权限")
                 else:
                     await context.bot.send_message(chat_id=chat_id, text=f"@{operator} 不是当前群组的操作员")
             else:
