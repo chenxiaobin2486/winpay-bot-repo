@@ -728,15 +728,17 @@ async def run_schedule():
         await asyncio.sleep(1)  # 每秒检查一次调度任务
 
 # 主函数
-async def main():
+def main():
     port = int(os.getenv("PORT", "10000"))
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Listening on port: {port}")
 
     # 使用 ApplicationBuilder 构建应用
     application = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # 初始化应用
-    await application.initialize()
+    # 异步初始化应用
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(application.initialize())
 
     # 添加消息处理器
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
@@ -755,20 +757,22 @@ async def main():
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 设置 Webhook URL: {webhook_url}")
     try:
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 尝试启动 Webhook...")
-        # 启动调度循环
-        asyncio.create_task(run_schedule())
+        # 启动调度任务
+        loop.create_task(run_schedule())
         # 运行 Webhook
-        await application.run_webhook(
-            listen="0.0.0.0",
-            port=port,
-            url_path="/webhook",
-            webhook_url=webhook_url
+        loop.run_until_complete(
+            application.run_webhook(
+                listen="0.0.0.0",
+                port=port,
+                url_path="/webhook",
+                webhook_url=webhook_url
+            )
         )
     except Exception as e:
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Webhook 设置失败: {e}")
     finally:
-        # 关闭应用
-        await application.shutdown()
+        loop.run_until_complete(application.shutdown())
+        loop.close()
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    main()
