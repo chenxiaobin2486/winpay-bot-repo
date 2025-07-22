@@ -262,13 +262,13 @@ async def handle_message(update, context):
 
     elif message_text == "停止记账":
         if username and username in operators.get(chat_id, {}):
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '停止记账' 指令")
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')]] 匹配到 '停止记账' 指令")
             is_accounting_enabled[chat_id] = False  # 暂停记账功能
             await update.message.reply_text("已暂停记账功能")
 
     elif message_text == "恢复记账":
         if username and username in operators.get(chat_id, {}):
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '恢复记账' 指令")
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')] 匹配到 '恢复记账' 指令")
             is_accounting_enabled[chat_id] = True  # 恢复记账功能
             await update.message.reply_text("记账功能已恢复")
 
@@ -732,10 +732,13 @@ def main():
     port = int(os.getenv("PORT", "10000"))
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Listening on port: {port}")
 
+    # 显式创建并设置事件循环
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     application = Application.builder().token(BOT_TOKEN).build()
 
     # 初始化应用
-    loop = asyncio.get_event_loop()
     loop.run_until_complete(application.initialize())
 
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
@@ -755,7 +758,7 @@ def main():
     try:
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 尝试启动 Webhook...")
         # 启动调度循环
-        asyncio.create_task(run_schedule())
+        loop.create_task(run_schedule())
         # 运行 Webhook
         loop.run_until_complete(application.run_webhook(
             listen="0.0.0.0",
