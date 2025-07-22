@@ -59,15 +59,14 @@ async def handle_bill(update, context):
         for t in reversed([t for t in recent_transactions if t.startswith("入款")]):
             parts = t.split(" -> ")
             timestamp = parts[0].split()[2]
-            operator = parts[1].split(" (")[1].rstrip(")")
             if "u" in parts[0]:
                 amount = float(parts[0].split()[1].rstrip('u'))
-                bill += f"{timestamp}  {format_amount(amount)}u ({operator})\n"
+                bill += f"{timestamp}  {format_amount(amount)}u\n"
             else:
                 amount = float(parts[0].split()[1].rstrip('u'))
                 adjusted = float(parts[1].split()[0].rstrip('u'))
                 effective_rate = 1 - deposit_fee_rate
-                bill += f"{timestamp}  {format_amount(amount)}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_deposit)}={format_amount(adjusted)}u ({operator})\n"
+                bill += f"{timestamp}  {format_amount(amount)}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_deposit)}={format_amount(adjusted)}u\n"
 
     # 出款部分
     if withdraw_count > 0:
@@ -77,15 +76,14 @@ async def handle_bill(update, context):
         for t in reversed([t for t in recent_transactions if t.startswith("下发")]):
             parts = t.split(" -> ")
             timestamp = parts[0].split()[2]
-            operator = parts[1].split(" (")[1].rstrip(")")
             if "u" in parts[0]:
                 amount = float(parts[0].split()[1].rstrip('u'))
-                bill += f"{timestamp}  {format_amount(amount)}u ({operator})\n"
+                bill += f"{timestamp}  {format_amount(amount)}u\n"
             else:
                 amount = float(parts[0].split()[1].rstrip('u'))
                 adjusted = float(parts[1].split()[0].rstrip('u'))
                 effective_rate = 1 + withdraw_fee_rate
-                bill += f"{timestamp}  {format_amount(amount)}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_withdraw)}={format_amount(adjusted)}u ({operator})\n"
+                bill += f"{timestamp}  {format_amount(amount)}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_withdraw)}={format_amount(adjusted)}u\n"
 
     # 统计信息
     if deposit_count > 0 or withdraw_count > 0:  # 只有有交易时才显示统计
@@ -111,7 +109,7 @@ async def handle_bill(update, context):
             bill += f"总出款：{format_amount(total_withdraw)}  |  {format_amount(total_withdraw_adjusted)}u\n"
         bill += f"总余额：{format_amount(balance)}u"
 
-    await update.message.reply_text(bill if transactions[chat_id] else "无交易记录")
+    await context.bot.send_message(chat_id=chat_id, text=bill if transactions[chat_id] else "无交易记录")
 
 # 格式化金额函数
 def format_amount(amount):
@@ -137,9 +135,25 @@ async def welcome_new_member(update: telegram.Update, context: telegram.ext.Cont
             user_id = str(member.id)
             username = member.username
             first_name = member.first_name.strip() if member.first_name else None
-            user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
             nickname = first_name or username or "新朋友"
-            await update.message.reply_text(f"欢迎 {nickname} 来到本群")
+            timestamp = datetime.now(pytz.timezone("Asia/Bangkok")).strftime("%Y年%m月%d日 %H:%M")
+
+            user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
+            await context.bot.send_message(chat_id=chat_id, text=f"欢迎 {nickname} 来到本群")
+
+            # 检测昵称/用户名不一致
+            if user_id in user_history[chat_id]:
+                old_data = user_history[chat_id][user_id].copy()
+                old_username = old_data["username"]
+                old_first_name = old_data["first_name"]
+                if username and username != old_username and first_name == old_first_name:
+                    warning = f"⚠️防骗提示⚠️ ({first_name}) 的用户名不一致\n之前用户名：@{old_username}\n现在用户名：@{username}\n修改时间：{timestamp}\n请注意查证‼️"
+                    await context.bot.send_message(chat_id=chat_id, text=warning)
+                    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 用户名变更警告: {first_name}, 之前 @{old_username}, 现在 @{username}")
+                elif first_name and first_name != old_first_name and username == old_username:
+                    warning = f"⚠️防骗提示⚠️ (@{username}) 的昵称不一致\n之前昵称：{old_first_name}\n现在昵称：{first_name}\n修改时间：{timestamp}\n请注意查证‼️"
+                    await context.bot.send_message(chat_id=chat_id, text=warning)
+                    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
 
 # 群发执行函数
 async def send_broadcast(context, task):
@@ -165,7 +179,6 @@ async def handle_message(update, context):
     user_id = str(update.message.from_user.id)
     username = update.message.from_user.username
     first_name = update.message.from_user.first_name.strip() if update.message.from_user.first_name else None
-    operator_name = first_name or "未知用户"
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 收到消息: '{message_text}' 从用户 {user_id}, username: {username}, chat_id: {chat_id}")
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 消息详情: animation={bool(update.message.animation)}, document={bool(update.message.document)}, photo={bool(update.message.photo)}, video={bool(update.message.video)}")
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 当前群组操作员列表: {operators.get(chat_id, {})}")
@@ -180,7 +193,7 @@ async def handle_message(update, context):
     if chat_id not in address_verify_count:
         address_verify_count[chat_id] = {"count": 0, "last_user": None}
     if chat_id not in is_accounting_enabled:
-        is_accounting_enabled[chat_id] = True  # 默认启用记账
+        is_accounting_enabled[chat_id] = True
     if chat_id not in last_file_id:
         last_file_id[chat_id] = None
     if chat_id not in last_file_message:
@@ -188,24 +201,24 @@ async def handle_message(update, context):
     if chat_id not in exchange_rates:
         exchange_rates[chat_id] = {"deposit": 1.0, "withdraw": 1.0, "deposit_fee": 0.0, "withdraw_fee": 0.0}
 
-    # 更新或记录用户历史
+    # 首次互动初始化老成员并检测不一致
     if user_id not in user_history[chat_id]:
         user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
+        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 初始化用户 {user_id} 记录: username={username}, first_name={first_name}")
     else:
-        old_data = user_history[chat_id][user_id]
+        old_data = user_history[chat_id][user_id].copy()
         old_username = old_data["username"]
         old_first_name = old_data["first_name"]
+        timestamp = datetime.now(pytz.timezone("Asia/Bangkok")).strftime("%Y年%m月%d日 %H:%M")
         if username and username != old_username and first_name == old_first_name:
-            await update.message.reply_text(
-                f"⚠️警告⚠️{first_name} 用户名不一致\n之前用户名@{old_username}\n现在用户名@{username}\n请注意查证‼️"
-            )
+            warning = f"⚠️防骗提示⚠️ ({first_name}) 的用户名不一致\n之前用户名：@{old_username}\n现在用户名：@{username}\n修改时间：{timestamp}\n请注意查证‼️"
+            await context.bot.send_message(chat_id=chat_id, text=warning)
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 用户名变更警告: {first_name}, 之前 @{old_username}, 现在 @{username}")
         elif first_name and first_name != old_first_name and username == old_username:
-            await update.message.reply_text(
-                f"⚠️警告⚠️@{username} 昵称不一致\n之前昵称{old_first_name}\n现在昵称{first_name}\n请注意查证‼️"
-            )
+            warning = f"⚠️防骗提示⚠️ (@{username}) 的昵称不一致\n之前昵称：{old_first_name}\n现在昵称：{first_name}\n修改时间：{timestamp}\n请注意查证‼️"
+            await context.bot.send_message(chat_id=chat_id, text=warning)
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
-        user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
+    user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
 
     # 私聊中处理文件消息
     if update.message.chat.type == "private":
@@ -229,14 +242,26 @@ async def handle_message(update, context):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 处理文件消息，类型: {file_type}, 文件ID: {file_id}, 文本: {caption or '无'}")
             last_file_id[chat_id] = file_id
             last_file_message[chat_id] = {"file_id": file_id, "caption": caption}
-            try:
-                await update.message.reply_text(f"{file_type}文件 ID: {file_id}")
-            except Exception as e:
-                print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 回复文件ID失败: {e}")
-                await update.message.reply_text("无法回复文件ID，请稍后重试")
+            await context.bot.send_message(chat_id=chat_id, text=f"{file_type}文件 ID: {file_id}")
         elif update.message.video or update.message.document or update.message.animation or update.message.photo:
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 文件处理失败，未识别到有效文件ID，消息详情: animation={bool(update.message.animation)}, document={bool(update.message.document)}, photo={bool(update.message.photo)}, video={bool(update.message.video)}")
-            await update.message.reply_text("无法识别文件，请确保发送的是动图、视频或图片文件")
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 文件处理失败，未识别到有效文件ID")
+            await context.bot.send_message(chat_id=chat_id, text="无法识别文件，请确保发送的是动图、视频或图片文件")
+        return
+
+    # 仅处理指令消息
+    if not any(message_text.startswith(cmd) or message_text == cmd for cmd in [
+        "开始", "停止记账", "恢复记账", "说明", "入款", "+", "下发", "设置操作员", "删除操作员",
+        "设置入款汇率", "设置入款费率", "设置下发汇率", "设置下发费率", "账单", "+0", "删除",
+        "删除账单", "日切", "操作员列表", "编队", "删除", "编辑", "任务", "任务列表"
+    ]):
+        return
+
+    # 权限检查
+    is_operator = username and (username in operators.get(chat_id, {}) or username in global_operators)
+    if not is_operator and message_text not in ["账单", "+0", "说明"]:
+        if username:
+            await context.bot.send_message(chat_id=chat_id, text=f"@{username}非操作员，请联系管理员设置权限")
+        return
 
     # 编队列表指令
     if message_text == "编队列表" and update.message.chat.type == "private":
@@ -247,33 +272,33 @@ async def handle_message(update, context):
             else:
                 response = "无编队"
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 编队列表响应: {response}")
-            await update.message.reply_text(response)
+            await context.bot.send_message(chat_id=chat_id, text=response)
         else:
-            await update.message.reply_text(f"仅操作员可查看编队列表，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
+            await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可查看编队列表，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
         return
 
     # 记账功能
     if message_text == "开始":
-        if username and username in operators.get(chat_id, {}):
+        if is_operator:
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '开始' 指令")
             transactions[chat_id].clear()  # 清空当前账单，重新开始记账
             is_accounting_enabled[chat_id] = True  # 确保启用记账
-            await update.message.reply_text("欢迎使用winpay小秘书，我将全天为你服务")
+            await context.bot.send_message(chat_id=chat_id, text="欢迎使用winpay小秘书，我将全天为你服务")
 
     elif message_text == "停止记账":
-        if username and username in operators.get(chat_id, {}):
+        if is_operator:
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '停止记账' 指令")
             is_accounting_enabled[chat_id] = False  # 暂停记账功能
-            await update.message.reply_text("已暂停记账功能")
+            await context.bot.send_message(chat_id=chat_id, text="已暂停记账功能")
 
     elif message_text == "恢复记账":
-        if username and username in operators.get(chat_id, {}):
+        if is_operator:
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '恢复记账' 指令")
             is_accounting_enabled[chat_id] = True  # 恢复记账功能
-            await update.message.reply_text("记账功能已恢复")
+            await context.bot.send_message(chat_id=chat_id, text="记账功能已恢复")
 
     elif message_text == "说明":
-        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
+        if is_operator or message_text == "说明":
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '说明' 指令")
             help_text = """
 可用指令：
@@ -291,10 +316,10 @@ async def handle_message(update, context):
 清空账单：删除账单
 查看操作员：操作员列表
             """
-            await update.message.reply_text(help_text)
+            await context.bot.send_message(chat_id=chat_id, text=help_text)
 
     elif (message_text.startswith("入款") or message_text.startswith("+")) and message_text != "+0":
-        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
+        if is_operator and is_accounting_enabled.get(chat_id, True):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '入款' 或 '+' 指令，金额: {message_text.replace('入款', '').replace('+', '').strip()}")
             try:
                 amount_str = message_text.replace("入款", "").replace("+", "").strip()
@@ -305,22 +330,22 @@ async def handle_message(update, context):
                 deposit_fee_rate = exchange_rates[chat_id]["deposit_fee"]
                 if amount_str.lower().endswith('u'):
                     amount = float(amount_str.rstrip('uU'))
-                    transaction = f"入款 {format_amount(amount)}u {timestamp} -> {format_amount(amount)}u ({operator_name})"
+                    transaction = f"入款 {format_amount(amount)}u {timestamp}"
                 elif amount_str.endswith(".0") or amount_str.endswith(".00"):
                     amount = float(amount_str.rstrip('.0').rstrip('.00'))
                     adjusted_amount = amount * (1 - deposit_fee_rate) / exchange_rate_deposit
-                    transaction = f"入款 {format_amount(amount)} {timestamp} -> {format_amount(adjusted_amount)}u ({operator_name})"
+                    transaction = f"入款 {format_amount(amount)} {timestamp} -> {format_amount(adjusted_amount)}u"
                 else:
                     amount = float(amount_str)
                     adjusted_amount = amount * (1 - deposit_fee_rate) / exchange_rate_deposit
-                    transaction = f"入款 {format_amount(amount)} {timestamp} -> {format_amount(adjusted_amount)}u ({operator_name})"
+                    transaction = f"入款 {format_amount(amount)} {timestamp} -> {format_amount(adjusted_amount)}u"
                 transactions[chat_id].append(transaction)
                 await handle_bill(update, context)
             except ValueError:
-                await update.message.reply_text("请输入正确金额，例如：入款1000 或 +1000 或 +100u")
+                await context.bot.send_message(chat_id=chat_id, text="请输入正确金额，例如：入款1000 或 +1000 或 +100u")
 
     elif message_text.startswith("下发"):
-        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
+        if is_operator and is_accounting_enabled.get(chat_id, True):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '下发' 指令，金额: {message_text.replace('下发', '').strip()}")
             try:
                 amount_str = message_text.replace("下发", "").strip()
@@ -331,96 +356,96 @@ async def handle_message(update, context):
                 withdraw_fee_rate = exchange_rates[chat_id]["withdraw_fee"]
                 if amount_str.lower().endswith('u'):
                     amount = float(amount_str.rstrip('uU'))
-                    transaction = f"下发 {format_amount(amount)}u {timestamp} -> {format_amount(amount)}u ({operator_name})"
+                    transaction = f"下发 {format_amount(amount)}u {timestamp}"
                 elif amount_str.endswith(".0") or amount_str.endswith(".00"):
                     amount = float(amount_str.rstrip('.0').rstrip('.00'))
                     adjusted_amount = amount * (1 + withdraw_fee_rate) / exchange_rate_withdraw
-                    transaction = f"下发 {format_amount(amount)} {timestamp} -> {format_amount(adjusted_amount)}u ({operator_name})"
+                    transaction = f"下发 {format_amount(amount)} {timestamp} -> {format_amount(adjusted_amount)}u"
                 else:
                     amount = float(amount_str)
                     adjusted_amount = amount * (1 + withdraw_fee_rate) / exchange_rate_withdraw
-                    transaction = f"下发 {format_amount(amount)} {timestamp} -> {format_amount(adjusted_amount)}u ({operator_name})"
+                    transaction = f"下发 {format_amount(amount)} {timestamp} -> {format_amount(adjusted_amount)}u"
                 transactions[chat_id].append(transaction)
                 await handle_bill(update, context)
             except ValueError:
-                await update.message.reply_text("请输入正确金额，例如：下发500 或 下发50u")
+                await context.bot.send_message(chat_id=chat_id, text="请输入正确金额，例如：下发500 或 下发50u")
 
     elif message_text.startswith("设置操作员"):
-        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
+        if is_operator and is_accounting_enabled.get(chat_id, True):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '设置操作员' 指令，参数: {message_text.replace('设置操作员', '').strip()}")
             operator = message_text.replace("设置操作员", "").strip()
             if operator.startswith("@"):
-                operator = operator[1:]  # 移除 @ 符号
+                operator = operator[1:]
                 if chat_id not in operators:
                     operators[chat_id] = {}
                 operators[chat_id][operator] = True
-                global_operators.add(operator)  # 添加到全局操作员列表
-                await update.message.reply_text(f"已将 @{operator} 设置为操作员")
+                global_operators.add(operator)
+                await context.bot.send_message(chat_id=chat_id, text=f"已将 @{operator} 设置为操作员")
             else:
-                await update.message.reply_text("请使用格式：设置操作员 @用户名")
+                await context.bot.send_message(chat_id=chat_id, text="请使用格式：设置操作员 @用户名")
 
     elif message_text.startswith("删除操作员"):
-        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
+        if is_operator and is_accounting_enabled.get(chat_id, True):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '删除操作员' 指令，参数: {message_text.replace('删除操作员', '').strip()}")
             operator = message_text.replace("删除操作员", "").strip()
             if operator.startswith("@"):
-                operator = operator[1:]  # 移除 @ 符号
+                operator = operator[1:]
                 if chat_id in operators and operator in operators[chat_id]:
                     del operators[chat_id][operator]
-                    global_operators.discard(operator)  # 从全局操作员列表移除
-                    await update.message.reply_text(f"已删除 @{operator} 的操作员权限")
+                    global_operators.discard(operator)
+                    await context.bot.send_message(chat_id=chat_id, text=f"已删除 @{operator} 的操作员权限")
                 else:
-                    await update.message.reply_text(f"@{operator} 不是操作员")
+                    await context.bot.send_message(chat_id=chat_id, text=f"@{operator} 不是操作员")
             else:
-                await update.message.reply_text("请使用格式：删除操作员 @用户名")
+                await context.bot.send_message(chat_id=chat_id, text="请使用格式：删除操作员 @用户名")
 
     elif message_text.startswith("设置入款汇率"):
-        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
+        if is_operator and is_accounting_enabled.get(chat_id, True):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '设置入款汇率' 指令，汇率: {message_text.replace('设置入款汇率', '').strip()}")
             try:
                 rate = float(message_text.replace("设置入款汇率", "").strip())
                 exchange_rates[chat_id]["deposit"] = round(rate, 3)
-                await update.message.reply_text(f"设置成功入款汇率 {format_exchange_rate(exchange_rates[chat_id]['deposit'])}")
+                await context.bot.send_message(chat_id=chat_id, text=f"设置成功入款汇率 {format_exchange_rate(exchange_rates[chat_id]['deposit'])}")
             except ValueError:
-                await update.message.reply_text("请输入正确汇率，例如：设置入款汇率0.98")
+                await context.bot.send_message(chat_id=chat_id, text="请输入正确汇率，例如：设置入款汇率0.98")
 
     elif message_text.startswith("设置入款费率"):
-        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
+        if is_operator and is_accounting_enabled.get(chat_id, True):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '设置入款费率' 指令，费率: {message_text.replace('设置入款费率', '').strip()}")
             try:
                 rate = float(message_text.replace("设置入款费率", "").strip()) / 100
                 exchange_rates[chat_id]["deposit_fee"] = rate
-                await update.message.reply_text(f"设置成功入款费率 {int(rate*100)}%")
+                await context.bot.send_message(chat_id=chat_id, text=f"设置成功入款费率 {int(rate*100)}%")
             except ValueError:
-                await update.message.reply_text("请输入正确费率，例如：设置入款费率8")
+                await context.bot.send_message(chat_id=chat_id, text="请输入正确费率，例如：设置入款费率8")
 
     elif message_text.startswith("设置下发汇率"):
-        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
+        if is_operator and is_accounting_enabled.get(chat_id, True):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '设置下发汇率' 指令，汇率: {message_text.replace('设置下发汇率', '').strip()}")
             try:
                 rate = float(message_text.replace("设置下发汇率", "").strip())
                 exchange_rates[chat_id]["withdraw"] = round(rate, 3)
-                await update.message.reply_text(f"设置成功下发汇率 {format_exchange_rate(exchange_rates[chat_id]['withdraw'])}")
+                await context.bot.send_message(chat_id=chat_id, text=f"设置成功下发汇率 {format_exchange_rate(exchange_rates[chat_id]['withdraw'])}")
             except ValueError:
-                await update.message.reply_text("请输入正确汇率，例如：设置下发汇率1.25")
+                await context.bot.send_message(chat_id=chat_id, text="请输入正确汇率，例如：设置下发汇率1.25")
 
     elif message_text.startswith("设置下发费率"):
-        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
+        if is_operator and is_accounting_enabled.get(chat_id, True):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '设置下发费率' 指令，费率: {message_text.replace('设置下发费率', '').strip()}")
             try:
                 rate = float(message_text.replace("设置下发费率", "").strip()) / 100
                 exchange_rates[chat_id]["withdraw_fee"] = rate
-                await update.message.reply_text(f"设置成功下发费率 {int(rate*100)}%")
+                await context.bot.send_message(chat_id=chat_id, text=f"设置成功下发费率 {int(rate*100)}%")
             except ValueError:
-                await update.message.reply_text("请输入正确费率，例如：设置下发费率8")
+                await context.bot.send_message(chat_id=chat_id, text="请输入正确费率，例如：设置下发费率8")
 
     elif message_text == "账单" or message_text == "+0":
-        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
+        if is_operator or message_text in ["账单", "+0"]:
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '账单' 或 '+0' 指令")
             await handle_bill(update, context)
 
     elif message_text == "删除":
-        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
+        if is_operator and is_accounting_enabled.get(chat_id, True):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '删除' 指令")
             if update.message.reply_to_message:
                 original_message = update.message.reply_to_message.text.strip()
@@ -435,8 +460,8 @@ async def handle_message(update, context):
                             t_has_u = t.split()[1].endswith('u')
                             if t_amount == amount and has_u == t_has_u:
                                 transactions[chat_id].remove(t)
-                                await update.message.reply_text(f"入款 {format_amount(amount)}{'u' if has_u else ''} 已被撤销")
-                                await handle_bill(update, context)  # 自动显示账单
+                                await context.bot.send_message(chat_id=chat_id, text=f"入款 {format_amount(amount)}{'u' if has_u else ''} 已被撤销")
+                                await handle_bill(update, context)
                                 return
                 elif original_message.startswith("下发"):
                     amount_str = original_message.replace("下发", "").strip()
@@ -448,30 +473,28 @@ async def handle_message(update, context):
                             t_has_u = t.split()[1].endswith('u')
                             if t_amount == amount and has_u == t_has_u:
                                 transactions[chat_id].remove(t)
-                                await update.message.reply_text(f"下发 {format_amount(amount)}{'u' if has_u else ''} 已被撤销")
-                                await handle_bill(update, context)  # 自动显示账单
+                                await context.bot.send_message(chat_id=chat_id, text=f"下发 {format_amount(amount)}{'u' if has_u else ''} 已被撤销")
+                                await handle_bill(update, context)
                                 return
-                await update.message.reply_text("无法撤销此消息，请确保回复正确的入款或下发记录")
-            else:
-                await update.message.reply_text("请回复目标交易相关消息以删除")
+            await context.bot.send_message(chat_id=chat_id, text="无法撤销此消息，请确保回复正确的入款或下发记录")
 
     elif message_text == "删除账单":
-        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
+        if is_operator and is_accounting_enabled.get(chat_id, True):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '删除账单' 指令")
             transactions[chat_id].clear()
-            await update.message.reply_text("今日已清账💰，重新开始记账")
+            await context.bot.send_message(chat_id=chat_id, text="今日已清账💰，重新开始记账")
 
     elif message_text == "日切" and username == initial_admin_username:
-        if username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
+        if is_operator and is_accounting_enabled.get(chat_id, True):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '日切' 指令")
             transactions[chat_id].clear()
-            await update.message.reply_text("交易记录已清空")
+            await context.bot.send_message(chat_id=chat_id, text="交易记录已清空")
 
     elif message_text == "操作员列表":
-        if username and username in operators.get(chat_id, {}) and is_accounting_enabled.get(chat_id, True):
+        if is_operator and is_accounting_enabled.get(chat_id, True):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '操作员列表' 指令")
             op_list = ", ".join([f"@{op}" for op in operators.get(chat_id, {})])
-            await update.message.reply_text(f"当前群组操作员列表: {op_list if op_list else '无操作员'}\n全局操作员列表: {', '.join(f'@{op}' for op in global_operators)}")
+            await context.bot.send_message(chat_id=chat_id, text=f"当前群组操作员列表: {op_list if op_list else '无操作员'}\n全局操作员列表: {', '.join(f'@{op}' for op in global_operators)}")
 
     elif re.match(r'^[T][a-km-zA-HJ-NP-Z1-9]{33}$', message_text):
         if is_accounting_enabled.get(chat_id, True):
@@ -481,7 +504,7 @@ async def handle_message(update, context):
             address_verify_count[chat_id]["count"] += 1
             last_user = address_verify_count[chat_id]["last_user"] or "无"
             address_verify_count[chat_id]["last_user"] = current_user
-            await update.message.reply_text(
+            await context.bot.send_message(chat_id=chat_id, text=
                 f"{message_text}\n"
                 f"验证次数：{address_verify_count[chat_id]['count']}\n"
                 f"本次发送人：{current_user}\n"
@@ -561,7 +584,7 @@ async def handle_message(update, context):
 - **时间调整**：若设定时间已过当天，自动调整为次日。
 - **错误处理**：编队不存在、群 ID 无效或未回复文件消息时，回复“任务目标有误请检查”。
             """
-            await update.message.reply_text(help_text)
+            await context.bot.send_message(chat_id=chat_id, text=help_text)
 
         # 编队指令
         if message_text.startswith("编队 "):
@@ -578,14 +601,14 @@ async def handle_message(update, context):
                                 raise ValueError(f"无效群ID: {gid}")
                         team_groups[team_name] = list(set(team_groups.get(team_name, []) + group_ids))
                         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 编队输入: 队名={team_name}, 群ID={group_ids}")
-                        await update.message.reply_text(f"编队已更新: {team_name}，包含群组: {', '.join(group_ids)}")
+                        await context.bot.send_message(chat_id=chat_id, text=f"编队已更新: {team_name}，包含群组: {', '.join(group_ids)}")
                     except ValueError as e:
                         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 编队解析失败: {e}")
-                        await update.message.reply_text(f"任务目标有误请检查: {e}")
+                        await context.bot.send_message(chat_id=chat_id, text=f"任务目标有误请检查: {e}")
                 else:
-                    await update.message.reply_text(f"仅操作员可执行此操作，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
+                    await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可执行此操作，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
             else:
-                await update.message.reply_text("使用格式：编队 队名 群ID,群ID")
+                await context.bot.send_message(chat_id=chat_id, text="使用格式：编队 队名 群ID,群ID")
             return
 
         # 删除编队群组
@@ -605,16 +628,16 @@ async def handle_message(update, context):
                             if not team_groups[team_name]:
                                 del team_groups[team_name]
                             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 删除群组: 队名={team_name}, 群ID={group_ids}")
-                            await update.message.reply_text("群组已从编队移除")
+                            await context.bot.send_message(chat_id=chat_id, text="群组已从编队移除")
                         else:
-                            await update.message.reply_text("任务目标有误请检查: 编队不存在")
+                            await context.bot.send_message(chat_id=chat_id, text="任务目标有误请检查: 编队不存在")
                     except ValueError as e:
                         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 删除解析失败: {e}")
-                        await update.message.reply_text(f"任务目标有误请检查: {e}")
+                        await context.bot.send_message(chat_id=chat_id, text=f"任务目标有误请检查: {e}")
                 else:
-                    await update.message.reply_text(f"仅操作员可执行此操作，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
+                    await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可执行此操作，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
             else:
-                await update.message.reply_text("使用格式：删除 队名 群ID,群ID")
+                await context.bot.send_message(chat_id=chat_id, text="使用格式：删除 队名 群ID,群ID")
             return
 
         # 群发任务逻辑
@@ -627,13 +650,13 @@ async def handle_message(update, context):
                     file_id = last_file_id.get(chat_id)
                     if file_id:
                         templates[template_name] = {"message": message, "file_id": file_id}
-                        await update.message.reply_text(f"模板 {template_name} 已更新")
+                        await context.bot.send_message(chat_id=chat_id, text=f"模板 {template_name} 已更新")
                     else:
-                        await update.message.reply_text("请先发送动图、视频或图片以获取文件 ID")
+                        await context.bot.send_message(chat_id=chat_id, text="请先发送动图、视频或图片以获取文件 ID")
                 else:
-                    await update.message.reply_text(f"仅操作员可执行此操作，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
+                    await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可执行此操作，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
             else:
-                await update.message.reply_text("使用格式：编辑 模板名 广告文")
+                await context.bot.send_message(chat_id=chat_id, text="使用格式：编辑 模板名 广告文")
 
         if message_text.startswith("任务 ") and not message_text.endswith("-1"):
             parts = message_text.split(" ", 3)
@@ -662,15 +685,15 @@ async def handle_message(update, context):
                                         lambda t=task_id: asyncio.run(send_broadcast(context, scheduled_tasks[t]))
                                     ).tag(task_id)
                                     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 任务 {task_id} 已注册，计划时间: {scheduled_time.strftime('%H:%M')}")
-                                    await update.message.reply_text(f"任务已创建，任务 ID: {task_id}，将在 {scheduled_time.strftime('%H:%M')} 执行")
+                                    await context.bot.send_message(chat_id=chat_id, text=f"任务已创建，任务 ID: {task_id}，将在 {scheduled_time.strftime('%H:%M')} 执行")
                                 except (ValueError, IndexError):
-                                    await update.message.reply_text("时间格式错误，请使用 HH:MM，例如 17:00")
+                                    await context.bot.send_message(chat_id=chat_id, text="时间格式错误，请使用 HH:MM，例如 17:00")
                             else:
-                                await update.message.reply_text("任务目标有误，请检查队名")
+                                await context.bot.send_message(chat_id=chat_id, text="任务目标有误，请检查队名")
                         else:
-                            await update.message.reply_text("请回复包含动图、视频或图片的消息")
+                            await context.bot.send_message(chat_id=chat_id, text="请回复包含动图、视频或图片的消息")
                     else:
-                        await update.message.reply_text("请回复包含动图、视频或图片的消息")
+                        await context.bot.send_message(chat_id=chat_id, text="请回复包含动图、视频或图片的消息")
             elif len(parts) == 4 and parts[1] and parts[2] and parts[3]:  # 现有模板模式
                 if username and (username in global_operators or username == initial_admin_username):
                     team_name, time_str, template_name = parts[1], parts[2], parts[3]
@@ -685,13 +708,13 @@ async def handle_message(update, context):
                             lambda t=task_id: asyncio.run(send_broadcast(context, scheduled_tasks[t]))
                         ).tag(task_id)
                         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 任务 {task_id} 已注册，计划时间: {scheduled_time.strftime('%H:%M')}")
-                        await update.message.reply_text(f"任务已创建，任务 ID: {task_id}，将在 {scheduled_time.strftime('%H:%M')} 执行")
+                        await context.bot.send_message(chat_id=chat_id, text=f"任务已创建，任务 ID: {task_id}，将在 {scheduled_time.strftime('%H:%M')} 执行")
                     except (ValueError, IndexError):
-                        await update.message.reply_text("时间格式错误，请使用 HH:MM，例如 17:00")
+                        await context.bot.send_message(chat_id=chat_id, text="时间格式错误，请使用 HH:MM，例如 17:00")
                 else:
-                    await update.message.reply_text(f"仅操作员可执行此操作，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
+                    await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可执行此操作，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
             else:
-                await update.message.reply_text("使用格式：任务 队名 时间 [模板名] 或回复文件 ID 消息使用 任务 队名 时间")
+                await context.bot.send_message(chat_id=chat_id, text="使用格式：任务 队名 时间 [模板名] 或回复文件 ID 消息使用 任务 队名 时间")
 
         if message_text.startswith("任务 ") and message_text.endswith("-1"):
             if username and (username in global_operators or username == initial_admin_username):
@@ -701,12 +724,12 @@ async def handle_message(update, context):
                         schedule.clear(task_id)
                         del scheduled_tasks[task_id]
                         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 任务 {task_id} 已取消")
-                        await update.message.reply_text("任务已取消")
+                        await context.bot.send_message(chat_id=chat_id, text="任务已取消")
                         break
                 else:
-                    await update.message.reply_text("无此队名的待执行任务")
+                    await context.bot.send_message(chat_id=chat_id, text="无此队名的待执行任务")
             else:
-                await update.message.reply_text(f"仅操作员可执行此操作，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
+                await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可执行此操作，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
 
         elif message_text == "任务列表" and update.message.chat.type == "private":
             if username and (username in global_operators or username == initial_admin_username):
@@ -717,9 +740,9 @@ async def handle_message(update, context):
                     )
                 else:
                     response = "无待执行任务"
-                await update.message.reply_text(response)
+                await context.bot.send_message(chat_id=chat_id, text=response)
             else:
-                await update.message.reply_text(f"仅操作员可查看任务列表，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
+                await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可查看任务列表，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
 
 # 调度任务循环
 async def run_schedule():
