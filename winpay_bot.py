@@ -268,7 +268,7 @@ async def handle_message(update, context):
 
     elif message_text == "恢复记账":
         if username and username in operators.get(chat_id, {}):
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '恢复记账' 指令")
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')] 匹配到 '恢复记账' 指令")
             is_accounting_enabled[chat_id] = True  # 恢复记账功能
             await update.message.reply_text("记账功能已恢复")
 
@@ -720,6 +720,12 @@ async def handle_message(update, context):
                 await update.message.reply_text(response)
             else:
                 await update.message.reply_text(f"仅操作员可查看任务列表，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
+
+# 调度任务循环
+async def run_schedule():
+    while True:
+        schedule.run_pending()
+        await asyncio.sleep(1)  # 每秒检查一次调度任务
 
 # 主函数
 async def main_async():
