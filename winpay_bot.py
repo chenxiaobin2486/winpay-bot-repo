@@ -722,12 +722,7 @@ async def handle_message(update, context):
                 await update.message.reply_text(f"仅操作员可查看任务列表，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
 
 # 主函数
-async def run_schedule():
-    while True:
-        schedule.run_pending()
-        await asyncio.sleep(1)  # 每秒检查一次调度任务
-
-def main():
+async def main_async():
     port = int(os.getenv("PORT", "10000"))
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Listening on port: {port}")
 
@@ -751,7 +746,7 @@ def main():
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 尝试启动 Webhook...")
         # 启动调度循环
         asyncio.create_task(run_schedule())
-        application.run_webhook(
+        await application.run_webhook(
             listen="0.0.0.0",
             port=port,
             url_path="/webhook",
@@ -759,6 +754,9 @@ def main():
         )
     except Exception as e:
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Webhook 设置失败: {e}")
+
+def main():
+    asyncio.run(main_async())
 
 if __name__ == '__main__':
     main()
