@@ -8,6 +8,7 @@ from datetime import datetime, timezone, timedelta
 import pytz
 import random
 import string
+import schedule  # 添加 schedule 模块
 
 # 定义 Bot Token（从环境变量获取）
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7908773608:AAFFqLmGkJ9zbsuymQTFzJxy5IyeN1E9M-U")
@@ -121,7 +122,7 @@ async def welcome_new_member(update: telegram.Update, context: telegram.ext.Cont
             timestamp = datetime.now(pytz.timezone("Asia/Bangkok")).strftime("%Y年%m月%d日 %H:%M")
 
             user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
-            await context.bot.send_message(chat_id=chat_id, text=f"欢迎 {nickname} 来到本群，winpay是你最好的选择")
+            await context.bot.send_message(chat_id=chat_id, text=f"欢迎 {nickname} 来到本群，入金叫卡找winpay，是你最好的选择")
 
             # 检测昵称/用户名不一致
             if user_id in user_history[chat_id]:
@@ -152,6 +153,16 @@ async def send_broadcast(context, task):
                 print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 已发送至群组 {group_id}")
             except Exception as e:
                 print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 发送至群组 {group_id} 失败: {e}")
+
+# 心跳检测函数
+async def heartbeat():
+    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 心跳检测，保持活跃")
+
+async def run_schedule():
+    schedule.every(5).minutes.do(lambda: asyncio.run(heartbeat()))
+    while True:
+        schedule.run_pending()
+        await asyncio.sleep(60)  # 每分钟检查一次
 
 # 处理所有消息
 async def handle_message(update, context):
@@ -263,7 +274,7 @@ async def handle_message(update, context):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '开始' 指令")
             transactions[chat_id].clear()  # 清空当前账单，重新开始记账
             is_accounting_enabled[chat_id] = True  # 确保启用记账
-            await context.bot.send_message(chat_id=chat_id, text="欢迎使用winpay小秘书，入金叫卡找winpay，是你最好的选择")
+            await context.bot.send_message(chat_id=chat_id, text="欢迎使用 winpay小秘书，入金叫卡找winpay，是你最好的选择")
 
     elif message_text == "停止记账":
         if is_operator:
@@ -273,7 +284,7 @@ async def handle_message(update, context):
 
     elif message_text == "恢复记账":
         if is_operator:
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '恢复记账' 指令")
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')]) 匹配到 '恢复记账' 指令")
             is_accounting_enabled[chat_id] = True  # 恢复记账功能
             await context.bot.send_message(chat_id=chat_id, text="记账功能已恢复")
 
@@ -758,6 +769,7 @@ def main():
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 设置 Webhook URL: {webhook_url}")
     try:
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 尝试启动 Webhook...")
+        loop.create_task(run_schedule())  # 启动心跳任务
         # 运行 Webhook
         loop.run_until_complete(
             application.run_webhook(
