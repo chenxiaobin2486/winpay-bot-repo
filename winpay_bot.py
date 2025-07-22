@@ -263,7 +263,7 @@ async def handle_message(update, context):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '开始' 指令")
             transactions[chat_id].clear()  # 清空当前账单，重新开始记账
             is_accounting_enabled[chat_id] = True  # 确保启用记账
-            await context.bot.send_message(chat_id=chat_id, text="欢迎使用winpay小秘书，我将全天为你服务")
+            await context.bot.send_message(chat_id=chat_id, text="欢迎使用winpay小秘书，入金叫卡找winpay，是你最好的选择")
 
     elif message_text == "停止记账":
         if is_operator:
