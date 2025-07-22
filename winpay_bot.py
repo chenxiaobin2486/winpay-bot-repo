@@ -1,5 +1,5 @@
 # 导入必要的模块
-from telegram.ext import Application, MessageHandler, filters
+from telegram.ext import Application, MessageHandler, filters, ApplicationBuilder
 import telegram.ext
 import schedule
 import time
@@ -728,19 +728,17 @@ async def run_schedule():
         await asyncio.sleep(1)  # 每秒检查一次调度任务
 
 # 主函数
-def main():
+async def main():
     port = int(os.getenv("PORT", "10000"))
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Listening on port: {port}")
 
-    # 显式创建并设置事件循环
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    application = Application.builder().token(BOT_TOKEN).build()
+    # 使用 ApplicationBuilder 构建应用
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
 
     # 初始化应用
-    loop.run_until_complete(application.initialize())
+    await application.initialize()
 
+    # 添加消息处理器
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
     application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL | filters.ANIMATION | filters.VIDEO, handle_message))
 
@@ -758,20 +756,19 @@ def main():
     try:
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 尝试启动 Webhook...")
         # 启动调度循环
-        loop.create_task(run_schedule())
+        asyncio.create_task(run_schedule())
         # 运行 Webhook
-        loop.run_until_complete(application.run_webhook(
+        await application.run_webhook(
             listen="0.0.0.0",
             port=port,
             url_path="/webhook",
             webhook_url=webhook_url
-        ))
+        )
     except Exception as e:
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Webhook 设置失败: {e}")
     finally:
         # 关闭应用
-        loop.run_until_complete(application.shutdown())
-        loop.close()
+        await application.shutdown()
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())
