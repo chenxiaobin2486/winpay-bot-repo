@@ -16,8 +16,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "7908773608:AAFFqLmGkJ9zbsuymQTFzJxy5IyeN1E9M
 
 # 定义全局变量
 initial_admin_username = "WinPay06_Thomason"  # 初始最高权限管理员用户名
-global_operators = {initial_admin_username}  # 全局操作员列表，初始包含管理员
-operators = {}  # {chat_id: {username: True}}，每个群组独立操作员列表
+operators = {}  # {chat_id: {username: True}}，包括群组和私聊 ("private") 的操作员列表
 transactions = {}  # {chat_id: [transaction_list]}，每个群组独立记账
 user_history = {}  # {chat_id: {user_id: {"username": str, "first_name": str}}}，记录成员历史
 exchange_rates = {}  # {chat_id: {"deposit": float, "withdraw": float, "deposit_fee": float, "withdraw_fee": float}}，每个群组独立汇率和费率
@@ -166,7 +165,7 @@ async def send_broadcast(context, task):
 
 # 处理所有消息
 async def handle_message(update, context):
-    global operators, transactions, user_history, address_verify_count, is_accounting_enabled, exchange_rates, team_groups, scheduled_tasks, last_file_id, last_file_message, templates, global_operators
+    global operators, transactions, user_history, address_verify_count, is_accounting_enabled, exchange_rates, team_groups, scheduled_tasks, last_file_id, last_file_message, templates
     message_text = update.message.text.strip() if update.message.text else ""
     chat_id = str(update.message.chat_id)
     user_id = str(update.message.from_user.id)
@@ -247,7 +246,8 @@ async def handle_message(update, context):
         return
 
     # 权限检查
-    is_operator = username and (username in operators.get(chat_id, {}) or username in global_operators)
+    is_operator = username and (username in operators.get(chat_id, {}) or 
+                              (update.message.chat.type == "private" and username in operators.get("private", {})))
     if not is_operator and message_text not in ["账单", "+0", "说明"]:
         if username:
             await context.bot.send_message(chat_id=chat_id, text=f"@{username}非操作员，请联系管理员设置权限")
@@ -256,7 +256,7 @@ async def handle_message(update, context):
     # 编队列表指令
     if message_text == "编队列表" and update.message.chat.type == "private":
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '编队列表' 指令")
-        if username and (username in global_operators or username == initial_admin_username):
+        if username and (username in operators.get("private", {}) or username == initial_admin_username):
             if team_groups:
                 response = "编队列表：\n" + "\n".join(f"{team}: {', '.join(groups)}" for team, groups in sorted(team_groups.items()))
             else:
@@ -264,7 +264,7 @@ async def handle_message(update, context):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 编队列表响应: {response}")
             await context.bot.send_message(chat_id=chat_id, text=response)
         else:
-            await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可查看编队列表，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
+            await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可查看编队列表，请联系管理员设置权限")
         return
 
     # 记账功能
@@ -368,9 +368,13 @@ async def handle_message(update, context):
                 operator = operator[1:]
                 if chat_id not in operators:
                     operators[chat_id] = {}
-                operators[chat_id][operator] = True
-                global_operators.add(operator)
-                await context.bot.send_message(chat_id=chat_id, text=f"已将 @{operator} 设置为操作员")
+                operators[chat_id][operator] = True  # 仅为当前群组设置操作员
+                # 仅在私聊中也添加权限（仅限新私聊初始化）
+                if update.message.chat.type == "private":
+                    if "private" not in operators:
+                        operators["private"] = {}
+                    operators["private"][operator] = True
+                await context.bot.send_message(chat_id=chat_id, text=f"已将 @{operator} 设置为当前群组和私聊的操作员")
             else:
                 await context.bot.send_message(chat_id=chat_id, text="请使用格式：设置操作员 @用户名")
 
@@ -382,10 +386,12 @@ async def handle_message(update, context):
                 operator = operator[1:]
                 if chat_id in operators and operator in operators[chat_id]:
                     del operators[chat_id][operator]
-                    global_operators.discard(operator)
-                    await context.bot.send_message(chat_id=chat_id, text=f"已删除 @{operator} 的操作员权限")
+                    # 仅在私聊中也删除权限（仅限新私聊初始化）
+                    if update.message.chat.type == "private" and "private" in operators and operator in operators["private"]:
+                        del operators["private"][operator]
+                    await context.bot.send_message(chat_id=chat_id, text=f"已删除 @{operator} 在当前群组和私聊的操作员权限")
                 else:
-                    await context.bot.send_message(chat_id=chat_id, text=f"@{operator} 不是操作员")
+                    await context.bot.send_message(chat_id=chat_id, text=f"@{operator} 不是当前群组的操作员")
             else:
                 await context.bot.send_message(chat_id=chat_id, text="请使用格式：删除操作员 @用户名")
 
@@ -484,7 +490,8 @@ async def handle_message(update, context):
         if is_operator and is_accounting_enabled.get(chat_id, True):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '操作员列表' 指令")
             op_list = ", ".join([f"@{op}" for op in operators.get(chat_id, {})])
-            await context.bot.send_message(chat_id=chat_id, text=f"当前群组操作员列表: {op_list if op_list else '无操作员'}\n全局操作员列表: {', '.join(f'@{op}' for op in global_operators)}")
+            private_op_list = ", ".join([f"@{op}" for op in operators.get("private", {})]) if "private" in operators else "无"
+            await context.bot.send_message(chat_id=chat_id, text=f"当前群组操作员列表: {op_list if op_list else '无'}\n私聊操作员列表: {private_op_list}")
 
     elif re.match(r'^[T][a-km-zA-HJ-NP-Z1-9]{33}$', message_text):
         if is_accounting_enabled.get(chat_id, True):
@@ -581,7 +588,7 @@ async def handle_message(update, context):
             parts = message_text.split(" ", 2)
             if len(parts) == 3 and parts[1] and parts[2]:
                 team_name = parts[1]
-                if username and (username in global_operators or username == initial_admin_username):
+                if username and (username in operators.get("private", {}) or username == initial_admin_username):
                     try:
                         group_ids = [gid.strip() for gid in re.split(r'[,，]', parts[2]) if gid.strip()]
                         if not group_ids:
@@ -596,7 +603,7 @@ async def handle_message(update, context):
                         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 编队解析失败: {e}")
                         await context.bot.send_message(chat_id=chat_id, text=f"任务目标有误请检查: {e}")
                 else:
-                    await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可执行此操作，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
+                    await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可执行此操作，请联系管理员设置权限")
             else:
                 await context.bot.send_message(chat_id=chat_id, text="使用格式：编队 队名 群ID,群ID")
             return
@@ -606,7 +613,7 @@ async def handle_message(update, context):
             parts = message_text.split(" ", 2)
             if len(parts) == 3 and parts[1] and parts[2]:
                 team_name = parts[1]
-                if username and (username in global_operators or username == initial_admin_username):
+                if username and (username in operators.get("private", {}) or username == initial_admin_username):
                     try:
                         group_ids = [gid.strip() for gid in re.split(r'[,，]', parts[2]) if gid.strip()]
                         if not group_ids:
@@ -625,7 +632,7 @@ async def handle_message(update, context):
                         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 删除解析失败: {e}")
                         await context.bot.send_message(chat_id=chat_id, text=f"任务目标有误请检查: {e}")
                 else:
-                    await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可执行此操作，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
+                    await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可执行此操作，请联系管理员设置权限")
             else:
                 await context.bot.send_message(chat_id=chat_id, text="使用格式：删除 队名 群ID,群ID")
             return
@@ -636,7 +643,7 @@ async def handle_message(update, context):
             if len(parts) == 3 and parts[1] and parts[2]:
                 template_name = parts[1]
                 message = parts[2]
-                if username and (username in global_operators or username == initial_admin_username):
+                if username and (username in operators.get("private", {}) or username == initial_admin_username):
                     file_id = last_file_id.get(chat_id)
                     if file_id:
                         templates[template_name] = {"message": message, "file_id": file_id}
@@ -644,14 +651,14 @@ async def handle_message(update, context):
                     else:
                         await context.bot.send_message(chat_id=chat_id, text="请先发送动图、视频或图片以获取文件 ID")
                 else:
-                    await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可执行此操作，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
+                    await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可执行此操作，请联系管理员设置权限")
             else:
                 await context.bot.send_message(chat_id=chat_id, text="使用格式：编辑 模板名 广告文")
 
         if message_text.startswith("任务 ") and not message_text.endswith("-1"):
             parts = message_text.split(" ", 3)
             if len(parts) == 3 and parts[1] and parts[2]:  # 标记回复模式
-                if username and (username in global_operators or username == initial_admin_username):
+                if username and (username in operators.get("private", {}) or username == initial_admin_username):
                     if update.message.reply_to_message:
                         reply_message = update.message.reply_to_message
                         if reply_message.animation or reply_message.video or reply_message.photo or reply_message.document:
@@ -685,7 +692,7 @@ async def handle_message(update, context):
                     else:
                         await context.bot.send_message(chat_id=chat_id, text="请回复包含动图、视频或图片的消息")
             elif len(parts) == 4 and parts[1] and parts[2] and parts[3]:  # 现有模板模式
-                if username and (username in global_operators or username == initial_admin_username):
+                if username and (username in operators.get("private", {}) or username == initial_admin_username):
                     team_name, time_str, template_name = parts[1], parts[2], parts[3]
                     try:
                         current_time = datetime.now(pytz.timezone("Asia/Bangkok"))
@@ -702,12 +709,12 @@ async def handle_message(update, context):
                     except (ValueError, IndexError):
                         await context.bot.send_message(chat_id=chat_id, text="时间格式错误，请使用 HH:MM，例如 17:00")
                 else:
-                    await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可执行此操作，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
+                    await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可执行此操作，请联系管理员设置权限")
             else:
                 await context.bot.send_message(chat_id=chat_id, text="使用格式：任务 队名 时间 [模板名] 或回复文件 ID 消息使用 任务 队名 时间")
 
         if message_text.startswith("任务 ") and message_text.endswith("-1"):
-            if username and (username in global_operators or username == initial_admin_username):
+            if username and (username in operators.get("private", {}) or username == initial_admin_username):
                 team_name = message_text.replace("任务 ", "").replace("-1", "").strip()
                 for task_id, task in list(scheduled_tasks.items()):
                     if task["team"] == team_name:
@@ -719,10 +726,10 @@ async def handle_message(update, context):
                 else:
                     await context.bot.send_message(chat_id=chat_id, text="无此队名的待执行任务")
             else:
-                await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可执行此操作，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
+                await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可执行此操作，请联系管理员设置权限")
 
         elif message_text == "任务列表" and update.message.chat.type == "private":
-            if username and (username in global_operators or username == initial_admin_username):
+            if username and (username in operators.get("private", {}) or username == initial_admin_username):
                 if scheduled_tasks:
                     response = "待执行任务列表：\n" + "\n".join(
                         f"任务 ID: {task_id}, 队名: {task['team']}, 时间: {task['time'].strftime('%H:%M')}"
@@ -732,7 +739,7 @@ async def handle_message(update, context):
                     response = "无待执行任务"
                 await context.bot.send_message(chat_id=chat_id, text=response)
             else:
-                await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可查看任务列表，当前全局操作员: {', '.join(f'@{op}' for op in global_operators)}")
+                await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可查看任务列表，请联系管理员设置权限")
 
 # 调度任务循环
 async def run_schedule():
