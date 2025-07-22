@@ -268,7 +268,7 @@ async def handle_message(update, context):
 
     elif message_text == "恢复记账":
         if username and username in operators.get(chat_id, {}):
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '恢复记账' 指令")
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')] 匹配到 '恢复记账' 指令")
             is_accounting_enabled[chat_id] = True  # 恢复记账功能
             await update.message.reply_text("记账功能已恢复")
 
@@ -728,11 +728,15 @@ async def run_schedule():
         await asyncio.sleep(1)  # 每秒检查一次调度任务
 
 # 主函数
-async def main_async():
+def main():
     port = int(os.getenv("PORT", "10000"))
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Listening on port: {port}")
 
     application = Application.builder().token(BOT_TOKEN).build()
+
+    # 初始化应用
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(application.initialize())
 
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
     application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL | filters.ANIMATION | filters.VIDEO, handle_message))
@@ -752,17 +756,19 @@ async def main_async():
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 尝试启动 Webhook...")
         # 启动调度循环
         asyncio.create_task(run_schedule())
-        await application.run_webhook(
+        # 运行 Webhook
+        loop.run_until_complete(application.run_webhook(
             listen="0.0.0.0",
             port=port,
             url_path="/webhook",
             webhook_url=webhook_url
-        )
+        ))
     except Exception as e:
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Webhook 设置失败: {e}")
-
-def main():
-    asyncio.run(main_async())
+    finally:
+        # 关闭应用
+        loop.run_until_complete(application.shutdown())
+        loop.close()
 
 if __name__ == '__main__':
     main()
