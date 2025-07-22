@@ -768,7 +768,7 @@ def main():
             )
         )
     except Exception as e:
-        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')]] Webhook 设置失败: {e}")
+        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Webhook 设置失败: {e}")
     finally:
         loop.run_until_complete(application.shutdown())
         loop.close()
