@@ -273,7 +273,7 @@ async def handle_message(update, context):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '开始' 指令")
             transactions[chat_id].clear()  # 清空当前账单，重新开始记账
             is_accounting_enabled[chat_id] = True  # 确保启用记账
-            await context.bot.send_message(chat_id=chat_id, text="欢迎使用winpay小秘书，我将全天为你服务")
+            await context.bot.send_message(chat_id=chat_id, text="欢迎使用winpay小秘书，入金叫卡winpay是您最好的选择")
 
     elif message_text == "停止记账":
         if is_operator:
@@ -368,8 +368,8 @@ async def handle_message(update, context):
                 operator = operator[1:]
                 if chat_id not in operators:
                     operators[chat_id] = {}
-                operators[chat_id][operator] = True  # 为当前群组设置操作员
-                # 同时为私聊机器人添加权限
+                operators[chat_id][operator] = True  # 为当前群组（如 A 群组）设置操作员
+                # 同时为私聊添加权限，确保私聊中识别 @ABC 为操作员
                 if "private" not in operators:
                     operators["private"] = {}
                 operators["private"][operator] = True
@@ -385,8 +385,8 @@ async def handle_message(update, context):
                 operator = operator[1:]
                 if chat_id in operators and operator in operators[chat_id]:
                     del operators[chat_id][operator]
-                    # 仅在私聊中也删除权限（仅限新私聊初始化）
-                    if update.message.chat.type == "private" and "private" in operators and operator in operators["private"]:
+                    # 如果在私聊中也存在该操作员权限，则一并删除
+                    if "private" in operators and operator in operators["private"]:
                         del operators["private"][operator]
                     await context.bot.send_message(chat_id=chat_id, text=f"已删除 @{operator} 操作员权限")
                 else:
