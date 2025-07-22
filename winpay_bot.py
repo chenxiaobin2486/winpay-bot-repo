@@ -47,61 +47,54 @@ async def handle_bill(update, context):
     deposit_count = sum(1 for t in recent_transactions if t.startswith("入款"))
     withdraw_count = sum(1 for t in recent_transactions if t.startswith("下发"))
 
-    # 获取群组特定汇率和费率
     exchange_rate_deposit = exchange_rates.get(chat_id, {"deposit": 1.0})["deposit"]
     deposit_fee_rate = exchange_rates.get(chat_id, {"deposit_fee": 0.0})["deposit_fee"]
     exchange_rate_withdraw = exchange_rates.get(chat_id, {"withdraw": 1.0})["withdraw"]
     withdraw_fee_rate = exchange_rates.get(chat_id, {"withdraw_fee": 0.0})["withdraw_fee"]
 
-    # 入款部分
     if deposit_count > 0:
         bill += f"入款（{deposit_count}笔）\n"
         for t in reversed([t for t in recent_transactions if t.startswith("入款")]):
             parts = t.split(" -> ")
             timestamp = parts[0].split()[2]
-            if "u" in parts[0]:
+            if len(parts) == 1:  # 无 ->，直接金额
                 amount = float(parts[0].split()[1].rstrip('u'))
                 bill += f"{timestamp}  {format_amount(amount)}u\n"
-            else:
+            else:  # 有 ->，调整金额
                 amount = float(parts[0].split()[1].rstrip('u'))
                 adjusted = float(parts[1].split()[0].rstrip('u'))
                 effective_rate = 1 - deposit_fee_rate
                 bill += f"{timestamp}  {format_amount(amount)}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_deposit)}={format_amount(adjusted)}u\n"
 
-    # 出款部分
     if withdraw_count > 0:
-        if deposit_count > 0:  # 若有入款，添加空行分隔
+        if deposit_count > 0:
             bill += "\n"
         bill += f"出款（{withdraw_count}笔）\n"
         for t in reversed([t for t in recent_transactions if t.startswith("下发")]):
             parts = t.split(" -> ")
             timestamp = parts[0].split()[2]
-            if "u" in parts[0]:
+            if len(parts) == 1:  # 无 ->，直接金额
                 amount = float(parts[0].split()[1].rstrip('u'))
                 bill += f"{timestamp}  {format_amount(amount)}u\n"
-            else:
+            else:  # 有 ->，调整金额
                 amount = float(parts[0].split()[1].rstrip('u'))
                 adjusted = float(parts[1].split()[0].rstrip('u'))
                 effective_rate = 1 + withdraw_fee_rate
                 bill += f"{timestamp}  {format_amount(amount)}*{effective_rate:.2f}/{format_exchange_rate(exchange_rate_withdraw)}={format_amount(adjusted)}u\n"
 
-    # 统计信息
-    if deposit_count > 0 or withdraw_count > 0:  # 只有有交易时才显示统计
-        if deposit_count > 0 or withdraw_count > 0:  # 确保有统计内容前加空行
+    if deposit_count > 0 or withdraw_count > 0:
+        if deposit_count > 0 or withdraw_count > 0:
             bill += "\n"
-        # 仅在有入款时显示入款相关统计
         if deposit_count > 0:
             bill += f"入款汇率：{format_exchange_rate(exchange_rate_deposit)}  |  费率：{int(deposit_fee_rate*100)}%\n"
-        # 仅在有出款时显示出款相关统计
         if withdraw_count > 0:
             bill += f"出款汇率：{format_exchange_rate(exchange_rate_withdraw)}  |  费率：{int(withdraw_fee_rate*100)}%\n"
-        if deposit_count > 0 or withdraw_count > 0:  # 确保统计分段
+        if deposit_count > 0 or withdraw_count > 0:
             bill += "\n"
-        # 总金额统计
-        total_deposit = sum(float(t.split(" -> ")[0].split()[1].rstrip('u')) for t in transactions[chat_id] if t.startswith("入款"))
-        total_deposit_adjusted = sum(float(t.split(" -> ")[1].split()[0].rstrip('u')) for t in transactions[chat_id] if t.startswith("入款"))
-        total_withdraw = sum(float(t.split(" -> ")[0].split()[1].rstrip('u')) for t in transactions[chat_id] if t.startswith("下发"))
-        total_withdraw_adjusted = sum(float(t.split(" -> ")[1].split()[0].rstrip('u')) for t in transactions[chat_id] if t.startswith("下发"))
+        total_deposit = sum(float(t.split()[1].rstrip('u')) for t in transactions[chat_id] if t.startswith("入款"))
+        total_deposit_adjusted = sum(float(t.split(" -> ")[1].split()[0].rstrip('u')) if "->" in t else float(t.split()[1].rstrip('u')) for t in transactions[chat_id] if t.startswith("入款"))
+        total_withdraw = sum(float(t.split()[1].rstrip('u')) for t in transactions[chat_id] if t.startswith("下发"))
+        total_withdraw_adjusted = sum(float(t.split(" -> ")[1].split()[0].rstrip('u')) if "->" in t else float(t.split()[1].rstrip('u')) for t in transactions[chat_id] if t.startswith("下发"))
         balance = total_deposit_adjusted - total_withdraw_adjusted
         if deposit_count > 0:
             bill += f"总入款：{format_amount(total_deposit)}  |  {format_amount(total_deposit_adjusted)}u\n"
@@ -179,10 +172,8 @@ async def handle_message(update, context):
     user_id = str(update.message.from_user.id)
     username = update.message.from_user.username
     first_name = update.message.from_user.first_name.strip() if update.message.from_user.first_name else None
+    operator_name = first_name or "未知用户"
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 收到消息: '{message_text}' 从用户 {user_id}, username: {username}, chat_id: {chat_id}")
-    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 消息详情: animation={bool(update.message.animation)}, document={bool(update.message.document)}, photo={bool(update.message.photo)}, video={bool(update.message.video)}")
-    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 当前群组操作员列表: {operators.get(chat_id, {})}")
-    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 当前全局操作员列表: {global_operators}")
 
     if chat_id not in operators:
         operators[chat_id] = {initial_admin_username: True}
@@ -221,7 +212,7 @@ async def handle_message(update, context):
     user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
 
     # 私聊中处理文件消息
-    if update.message.chat.type == "private":
+    if update.message.chat.type == "private" and (update.message.animation or update.message.document or update.message.video or update.message.photo):
         file_id = None
         file_type = None
         if update.message.animation:
@@ -236,7 +227,6 @@ async def handle_message(update, context):
         elif update.message.photo and len(update.message.photo) > 0:
             file_id = update.message.photo[-1].file_id
             file_type = "图片"
-
         if file_id:
             caption = update.message.caption or update.message.text or None
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 处理文件消息，类型: {file_type}, 文件ID: {file_id}, 文本: {caption or '无'}")
