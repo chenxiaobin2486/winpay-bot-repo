@@ -13,6 +13,7 @@ import schedule
 import asyncio
 import uvicorn  # 异步服务器
 import json
+from wsgi_to_asgi import WsgiToAsgi  # 添加 WsgiToAsgi 适配器
 
 # 定义 Flask 应用
 app = Flask(__name__)
@@ -735,9 +736,12 @@ async def main():
     # 异步设置 Webhook
     await application.bot.set_webhook(url=webhook_url)
 
+    # 使用 WsgiToAsgi 适配 Flask 为 ASGI
+    asgi_app = WsgiToAsgi(app)
+
     # 使用 uvicorn 运行服务
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 启动 uvicorn 服务...")
-    config = uvicorn.Config(app, host="0.0.0.0", port=port)
+    config = uvicorn.Config(asgi_app, host="0.0.0.0", port=port)
     server = uvicorn.Server(config)
     await server.serve()
 
