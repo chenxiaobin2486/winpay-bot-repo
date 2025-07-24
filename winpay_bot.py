@@ -1,4 +1,5 @@
 # 导入必要的模块
+import asyncio
 from telegram.ext import Application, MessageHandler, filters, ApplicationBuilder
 import telegram.ext
 import re
@@ -13,7 +14,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "7908773608:AAFFqLmGkJ9zbsuymQTFzJxy5IyeN1E9M
 
 # 定义全局变量
 initial_admin_username = "WinPay06_Thomason"  # 初始最高权限管理员用户名
-operators = {}  # {chat_id: {username: True}}，包括群组和私聊 ("private") 的操作员列表
+operating_groups = {}  # {chat_id: {username: True}}，包括群组和私聊 ("private") 的操作员列表
 transactions = {}  # {chat_id: [transaction_list]}，每个群组独立记账
 user_history = {}  # {chat_id: {user_id: {"username": str, "first_name": str}}}，记录成员历史
 exchange_rates = {}  # {chat_id: {"deposit": float, "withdraw": float, "deposit_fee": float, "withdraw_fee": float}}，每个群组独立汇率和费率
@@ -147,7 +148,7 @@ async def welcome_new_member(update: telegram.Update, context: telegram.ext.Cont
 
 # 处理所有消息
 async def handle_message(update, context):
-    global operators, transactions, user_history, address_verify_count, is_accounting_enabled, exchange_rates, team_groups, scheduled_tasks, last_file_id, last_file_message, templates
+    global operating_groups, transactions, user_history, address_verify_count, is_accounting_enabled, exchange_rates, team_groups, scheduled_tasks, last_file_id, last_file_message, templates
     message_text = update.message.text.strip() if update.message.text else ""
     chat_id = str(update.message.chat_id)
     user_id = str(update.message.from_user.id)
@@ -156,8 +157,8 @@ async def handle_message(update, context):
     operator_name = first_name or "未知用户"
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 收到消息: '{message_text}' 从用户 {user_id}, username: {username}, chat_id: {chat_id}")
 
-    if chat_id not in operators:
-        operators[chat_id] = {initial_admin_username: True}
+    if chat_id not in operating_groups:
+        operating_groups[chat_id] = {initial_admin_username: True}
     if chat_id not in transactions:
         transactions[chat_id] = []
     if chat_id not in user_history:
@@ -228,8 +229,8 @@ async def handle_message(update, context):
         return
 
     # 权限检查
-    is_operator = username and (username in operators.get(chat_id, {}) or 
-                              (update.message.chat.type == "private" and username in operators.get("private", {})))
+    is_operator = username and (username in operating_groups.get(chat_id, {}) or 
+                              (update.message.chat.type == "private" and username in operating_groups.get("private", {})))
     if not is_operator and message_text not in ["账单", "+0", "说明"]:
         if username:
             await context.bot.send_message(chat_id=chat_id, text=f"@{username}非操作员，请联系管理员设置权限")
@@ -238,7 +239,7 @@ async def handle_message(update, context):
     # 编队列表指令
     if message_text == "编队列表" and update.message.chat.type == "private":
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '编队列表' 指令")
-        if username and (username in operators.get("private", {}) or username == initial_admin_username):
+        if username and (username in operating_groups.get("private", {}) or username == initial_admin_username):
             if team_groups:
                 response = "编队列表：\n" + "\n".join(f"{team}: {', '.join(groups)}" for team, groups in sorted(team_groups.items()))
             else:
@@ -340,12 +341,12 @@ async def handle_message(update, context):
             operator = message_text.replace("设置操作员", "").strip()
             if operator.startswith("@"):
                 operator = operator[1:]
-                if chat_id not in operators:
-                    operators[chat_id] = {}
-                operators[chat_id][operator] = True
-                if "private" not in operators:
-                    operators["private"] = {}
-                operators["private"][operator] = True
+                if chat_id not in operating_groups:
+                    operating_groups[chat_id] = {}
+                operating_groups[chat_id][operator] = True
+                if "private" not in operating_groups:
+                    operating_groups["private"] = {}
+                operating_groups["private"][operator] = True
                 await context.bot.send_message(chat_id=chat_id, text=f"已将 @{operator} 设置为操作员")
             else:
                 await context.bot.send_message(chat_id=chat_id, text="请使用格式：设置操作员 @用户名")
@@ -356,10 +357,10 @@ async def handle_message(update, context):
             operator = message_text.replace("删除操作员", "").strip()
             if operator.startswith("@"):
                 operator = operator[1:]
-                if chat_id in operators and operator in operators[chat_id]:
-                    del operators[chat_id][operator]
-                    if "private" in operators and operator in operators["private"]:
-                        del operators["private"][operator]
+                if chat_id in operating_groups and operator in operating_groups[chat_id]:
+                    del operating_groups[chat_id][operator]
+                    if "private" in operating_groups and operator in operating_groups["private"]:
+                        del operating_groups["private"][operator]
                     await context.bot.send_message(chat_id=chat_id, text=f"已删除 @{operator} 操作员权限")
                 else:
                     await context.bot.send_message(chat_id=chat_id, text=f"@{operator} 不是当前群组的操作员")
@@ -460,8 +461,8 @@ async def handle_message(update, context):
     elif message_text == "操作员列表":
         if is_operator and is_accounting_enabled.get(chat_id, True):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '操作员列表' 指令")
-            op_list = ", ".join([f"@{op}" for op in operators.get(chat_id, {})])
-            private_op_list = ", ".join([f"@{op}" for op in operators.get("private", {})]) if "private" in operators else "无"
+            op_list = ", ".join([f"@{op}" for op in operating_groups.get(chat_id, {})])
+            private_op_list = ", ".join([f"@{op}" for op in operating_groups.get("private", {})]) if "private" in operating_groups else "无"
             await context.bot.send_message(chat_id=chat_id, text=f"当前群组操作员列表: {op_list if op_list else '无'}\n私聊操作员列表: {private_op_list}")
 
     elif re.match(r'^[T][a-km-zA-HJ-NP-Z1-9]{33}$', message_text):
@@ -530,7 +531,7 @@ async def handle_message(update, context):
             parts = message_text.split(" ", 2)
             if len(parts) == 3 and parts[1] and parts[2]:
                 team_name = parts[1]
-                if username and (username in operators.get("private", {}) or username == initial_admin_username):
+                if username and (username in operating_groups.get("private", {}) or username == initial_admin_username):
                     try:
                         group_ids = [gid.strip() for gid in re.split(r'[,，]', parts[2]) if gid.strip()]
                         if not group_ids:
@@ -555,7 +556,7 @@ async def handle_message(update, context):
             parts = message_text.split(" ", 2)
             if len(parts) == 3 and parts[1] and parts[2]:
                 team_name = parts[1]
-                if username and (username in operators.get("private", {}) or username == initial_admin_username):
+                if username and (username in operating_groups.get("private", {}) or username == initial_admin_username):
                     try:
                         group_ids = [gid.strip() for gid in re.split(r'[,，]', parts[2]) if gid.strip()]
                         if not group_ids:
@@ -585,7 +586,7 @@ async def handle_message(update, context):
             if len(parts) == 3 and parts[1] and parts[2]:
                 template_name = parts[1]
                 message = parts[2]
-                if username and (username in operators.get("private", {}) or username == initial_admin_username):
+                if username and (username in operating_groups.get("private", {}) or username == initial_admin_username):
                     file_id = last_file_id.get(chat_id)
                     if file_id:
                         templates[template_name] = {"message": message, "file_id": file_id}
@@ -619,9 +620,6 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL | filters.ANIMATION | filters.VIDEO, handle_message))
 
     external_url = os.getenv("RENDER_EXTERNAL_URL", "winpay-bot-repo.onrender.com").strip()
-    if not external_url:
-        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 错误：RENDER_EXTERNAL_URL 未设置")
-        return
     if not external_url.startswith("http"):
         webhook_url = f"https://{external_url}/webhook"
     else:
