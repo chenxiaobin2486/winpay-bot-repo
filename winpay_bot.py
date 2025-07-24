@@ -15,6 +15,9 @@ from gunicorn.app.base import BaseApplication
 # 定义 Flask 应用
 app = Flask(__name__)
 
+# 定义模块级 port
+port = int(os.getenv("PORT", "10000"))
+
 # 定义 Bot Token（从环境变量获取）
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7908773608:AAFFqLmGkJ9zbsuymQTFzJxy5IyeN1E9M-U")
 
@@ -311,7 +314,7 @@ async def handle_message(update: telegram.Update, context: ContextTypes.DEFAULT_
 
     elif message_text == "恢复记账":
         if is_operator:
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '恢复记账' 指令")
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')]] 匹配到 '恢复记账' 指令")
             is_accounting_enabled[chat_id] = True
             await context.bot.send_message(chat_id=chat_id, text="记账功能已恢复")
 
@@ -693,7 +696,6 @@ async def webhook():
 async def main():
     global application
     load_operators()
-    port = int(os.getenv("PORT", "10000"))
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Starting webhook on 0.0.0.0:{port}")
 
     global application
