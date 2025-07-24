@@ -351,7 +351,7 @@ def handle_message(update, context):
 
     elif message_text == "恢复记账":
         if is_operator:
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')]] 匹配到 '恢复记账' 指令")
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '恢复记账' 指令")
             is_accounting_enabled[chat_id] = True  # 恢复记账功能
             context.bot.send_message(chat_id=chat_id, text="记账功能已恢复")
 
@@ -541,7 +541,7 @@ def handle_message(update, context):
         if is_operator and is_accounting_enabled.get(chat_id, True):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '删除账单' 指令")
             transactions[chat_id].clear()
-            context.bot.send_message(chat_id=chat_id, text="当前账单已结算💰，重新开始记账")
+            context.bot.send_message(chat_id=chat_id, text="今日已清账💰，重新开始记账")
 
     elif message_text == "日切" and username == initial_admin_username:
         if is_operator and is_accounting_enabled.get(chat_id, True):
@@ -760,7 +760,7 @@ def main():
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
     application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL | filters.ANIMATION | filters.VIDEO, handle_message))
 
-    # 启动调度任务（在独立线程中运行）
+    # 启动调度任务在独立线程
     import threading
     schedule_thread = threading.Thread(target=run_schedule, daemon=True)
     schedule_thread.start()
@@ -778,8 +778,10 @@ def main():
     # 同步设置 Webhook
     application.bot.set_webhook(url=webhook_url)
 
-    # 使用 waitress 运行 Flask 应用
+    # 使用 waitress 运行服务
+    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 启动 waitress 服务...")
     waitress.serve(app, host="0.0.0.0", port=port)
+    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 服务已停止")  # 正常情况下不应到达此处
 
 if __name__ == '__main__':
     main()
