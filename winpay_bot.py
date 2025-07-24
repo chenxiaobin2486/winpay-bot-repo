@@ -313,7 +313,7 @@ def handle_message(update, context):
 
     elif message_text == "恢复记账":
         if is_operator:
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')]] 匹配到 '恢复记账' 指令")
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '恢复记账' 指令")
             is_accounting_enabled[chat_id] = True
             context.bot.send_message(chat_id=chat_id, text="记账功能已恢复")
 
