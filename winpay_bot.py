@@ -1,4 +1,4 @@
-# 导入必要的模块
+# 导入必要的模块（保持原有导入）
 import telegram
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 from flask import Flask, request
@@ -20,33 +20,33 @@ app = Flask(__name__)
 # 定义 Bot Token（从环境变量获取）
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7908773608:AAFFqLmGkJ9zbsuymQTFzJxy5IyeN1E9M-U")
 
-# 定义全局变量
-initial_admin_username = "WinPay06_Thomason"  # 初始最高权限管理员用户名
-operators = {}  # {chat_id: {username: True}}，包括群组和私聊 ("private") 的操作员列表
-transactions = {}  # {chat_id: [transaction_list]}，每个群组独立记账
-user_history = {}  # {chat_id: {user_id: {"username": str, "first_name": str}}}，记录成员历史
-exchange_rates = {}  # {chat_id: {"deposit": float, "withdraw": float, "deposit_fee": float, "withdraw_fee": float}}，每个群组独立汇率和费率
-address_verify_count = {}  # {chat_id: {"count": int, "last_user": str}}，记录地址验证次数和上次发送人
-is_accounting_enabled = {}  # {chat_id: bool}，控制记账状态，默认为 True
-team_groups = {}  # {队名: [群ID列表]}
-scheduled_tasks = {}  # {任务ID: {"team": 队名, "template": 模板名, "time": 任务时间}}
-last_file_id = {}  # {chat_id: 文件ID}
-last_file_message = {}  # {chat_id: {"file_id": str, "caption": str or None}}，记录最近文件消息
-templates = {}  # {模板名: {"message": 广告文, "file_id": 文件ID}}
-application = None  # 全局 Application 实例
+# 定义全局变量（保持原有定义）
+initial_admin_username = "WinPay06_Thomason"
+operators = {}
+transactions = {}
+user_history = {}
+exchange_rates = {}
+address_verify_count = {}
+is_accounting_enabled = {}
+team_groups = {}
+scheduled_tasks = {}
+last_file_id = {}
+last_file_message = {}
+templates = {}
+application = None
 
 # 加载操作员
 def load_operators():
     global operators
     operators.clear()
-    data_path = os.getenv("DATA_PATH", "data")  # 从环境变量获取，默认为 "data"
-    os.makedirs(data_path, exist_ok=True)  # 确保目录存在
+    data_path = os.getenv("DATA_PATH", "data")
+    os.makedirs(data_path, exist_ok=True)
     operators_file = os.path.join(data_path, "operators.json")
     try:
         with open(operators_file, 'r') as f:
             operators.update(json.load(f))
     except FileNotFoundError:
-        operators = {"private": {initial_admin_username: True}}  # 默认初始管理员
+        operators = {"private": {initial_admin_username: True}}
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 加载操作员: {operators}")
 
 # 保存操作员
@@ -57,7 +57,7 @@ def save_operators():
         json.dump(operators, f)
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 保存操作员: {operators}")
 
-# 账单处理函数
+# 账单处理函数（保持原有逻辑）
 async def handle_bill(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.message.chat_id)
     if chat_id not in transactions:
@@ -77,10 +77,10 @@ async def handle_bill(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
         for t in reversed([t for t in recent_transactions if t.startswith("入款")]):
             parts = t.split(" -> ")
             timestamp = parts[0].split()[2]
-            if len(parts) == 1:  # 无 ->，直接金额
+            if len(parts) == 1:
                 amount = float(parts[0].split()[1].rstrip('u'))
                 bill += f"{timestamp}  {format_amount(amount)}u\n"
-            else:  # 有 ->，调整金额
+            else:
                 amount = float(parts[0].split()[1].rstrip('u'))
                 adjusted = float(parts[1].split()[0].rstrip('u'))
                 rate_info = parts[1].split("[rate=")[1].rstrip("]").split(", fee=")
@@ -96,10 +96,10 @@ async def handle_bill(update: telegram.Update, context: ContextTypes.DEFAULT_TYP
         for t in reversed([t for t in recent_transactions if t.startswith("下发")]):
             parts = t.split(" -> ")
             timestamp = parts[0].split()[2]
-            if len(parts) == 1:  # 无 ->，直接金额
+            if len(parts) == 1:
                 amount = float(parts[0].split()[1].rstrip('u'))
                 bill += f"{timestamp}  {format_amount(amount)}u\n"
-            else:  # 有 ->，调整金额
+            else:
                 amount = float(parts[0].split()[1].rstrip('u'))
                 adjusted = float(parts[1].split()[0].rstrip('u'))
                 rate_info = parts[1].split("[rate=")[1].rstrip("]").split(", fee=")
@@ -144,7 +144,7 @@ def format_exchange_rate(rate):
         return f"{rate:.2f}"
     return formatted
 
-# 欢迎新成员
+# 欢迎新成员（保持原有逻辑）
 async def welcome_new_member(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.message.chat_id)
     if chat_id not in user_history:
@@ -160,7 +160,6 @@ async def welcome_new_member(update: telegram.Update, context: ContextTypes.DEFA
             user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
             await context.bot.send_message(chat_id=chat_id, text=f"欢迎 {nickname} 来到本群，入金叫卡找winpay，是你最好的选择")
 
-            # 检测昵称/用户名不一致
             if user_id in user_history[chat_id]:
                 old_data = user_history[chat_id][user_id].copy()
                 old_username = old_data["username"]
@@ -174,7 +173,7 @@ async def welcome_new_member(update: telegram.Update, context: ContextTypes.DEFA
                     await context.bot.send_message(chat_id=chat_id, text=warning)
                     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
 
-# 群发执行函数
+# 群发执行函数（保持原有逻辑）
 async def send_broadcast(context: ContextTypes.DEFAULT_TYPE, task):
     team_name = task["team"]
     template_name = task["template"]
@@ -200,7 +199,7 @@ def run_schedule():
         schedule.run_pending()
         time.sleep(60)
 
-# 处理所有消息
+# 处理所有消息（保持原有逻辑）
 async def handle_message(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
     global operators, transactions, user_history, address_verify_count, is_accounting_enabled, exchange_rates, team_groups, scheduled_tasks, last_file_id, last_file_message, templates
     message_text = update.message.text.strip() if update.message.text else ""
@@ -211,7 +210,6 @@ async def handle_message(update: telegram.Update, context: ContextTypes.DEFAULT_
     operator_name = first_name or "未知用户"
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 收到消息: '{message_text}' 从用户 {user_id}, username: {username}, chat_id: {chat_id}")
 
-    # 初始化全局变量
     if chat_id not in operators:
         operators[chat_id] = {}
     if chat_id not in transactions:
@@ -229,7 +227,6 @@ async def handle_message(update: telegram.Update, context: ContextTypes.DEFAULT_
     if chat_id not in exchange_rates:
         exchange_rates[chat_id] = {"deposit": 1.0, "withdraw": 1.0, "deposit_fee": 0.0, "withdraw_fee": 0.0}
 
-    # 首次互动初始化老成员并检测不一致
     if user_id not in user_history[chat_id]:
         user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 初始化用户 {user_id} 记录: username={username}, first_name={first_name}")
@@ -248,7 +245,6 @@ async def handle_message(update: telegram.Update, context: ContextTypes.DEFAULT_
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
     user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
 
-    # 私聊中处理文件消息
     if update.message.chat.type == "private" and (update.message.animation or update.message.document or update.message.video or update.message.photo):
         file_id = None
         file_type = None
@@ -275,7 +271,6 @@ async def handle_message(update: telegram.Update, context: ContextTypes.DEFAULT_
             await context.bot.send_message(chat_id=chat_id, text="无法识别文件，请确保发送的是动图、视频或图片文件")
         return
 
-    # 仅处理指令消息
     if not any(message_text.startswith(cmd) or message_text == cmd for cmd in [
         "开始", "停止记账", "恢复记账", "说明", "入款", "+", "下发", "设置操作员", "删除操作员",
         "设置入款汇率", "设置入款费率", "设置下发汇率", "设置下发费率", "账单", "+0", "删除",
@@ -283,7 +278,6 @@ async def handle_message(update: telegram.Update, context: ContextTypes.DEFAULT_
     ]):
         return
 
-    # 权限检查
     is_operator = username and (username in operators.get(chat_id, {}) or 
                               (update.message.chat.type == "private" and username in operators.get("private", {})))
     if not is_operator and message_text not in ["账单", "+0", "说明"]:
@@ -291,7 +285,6 @@ async def handle_message(update: telegram.Update, context: ContextTypes.DEFAULT_
             await context.bot.send_message(chat_id=chat_id, text=f"@{username}非操作员，请联系管理员设置权限")
         return
 
-    # 编队列表指令
     if message_text == "编队列表" and update.message.chat.type == "private":
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '编队列表' 指令")
         if username and (username in operators.get("private", {}) or username == initial_admin_username):
@@ -305,24 +298,23 @@ async def handle_message(update: telegram.Update, context: ContextTypes.DEFAULT_
             await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可查看编队列表，请联系管理员设置权限")
         return
 
-    # 记账功能
     if message_text == "开始":
         if is_operator:
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '开始' 指令")
-            transactions[chat_id].clear()  # 清空当前账单，重新开始记账
-            is_accounting_enabled[chat_id] = True  # 确保启用记账
+            transactions[chat_id].clear()
+            is_accounting_enabled[chat_id] = True
             await context.bot.send_message(chat_id=chat_id, text="欢迎使用 winpay小秘书，入金叫卡找winpay，是你最好的选择")
 
     elif message_text == "停止记账":
         if is_operator:
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '停止记账' 指令")
-            is_accounting_enabled[chat_id] = False  # 暂停记账功能
+            is_accounting_enabled[chat_id] = False
             await context.bot.send_message(chat_id=chat_id, text="已暂停记账功能")
 
     elif message_text == "恢复记账":
         if is_operator:
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '恢复记账' 指令")
-            is_accounting_enabled[chat_id] = True  # 恢复记账功能
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')]] 匹配到 '恢复记账' 指令")
+            is_accounting_enabled[chat_id] = True
             await context.bot.send_message(chat_id=chat_id, text="记账功能已恢复")
 
     elif message_text == "说明":
@@ -390,21 +382,19 @@ async def handle_message(update: telegram.Update, context: ContextTypes.DEFAULT_
             except ValueError:
                 await context.bot.send_message(chat_id=chat_id, text="请输入正确金额，例如：下发500 或 下发50u")
 
-    # 设置操作员
     elif message_text.startswith("设置操作员"):
         if is_operator:
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '设置操作员' 指令，参数: {message_text.replace('设置操作员', '').strip()}")
-            operator = message_text.replace("设置操作员", "").strip()[1:]  # 移除 @ 符号
+            operator = message_text.replace("设置操作员", "").strip()[1:]
             if chat_id not in operators:
                 operators[chat_id] = {}
             operators[chat_id][operator] = True
             if "private" not in operators:
                 operators["private"] = {}
             operators["private"][operator] = True
-            save_operators()  # 保存更改
+            save_operators()
             await context.bot.send_message(chat_id=chat_id, text=f"已将 @{operator} 设置为操作员")
 
-    # 删除操作员
     elif message_text.startswith("删除操作员"):
         if is_operator:
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '删除操作员' 指令，参数: {message_text.replace('删除操作员', '').strip()}")
@@ -413,7 +403,7 @@ async def handle_message(update: telegram.Update, context: ContextTypes.DEFAULT_
                 del operators[chat_id][operator]
                 if "private" in operators and operator in operators["private"]:
                     del operators["private"][operator]
-                save_operators()  # 保存更改
+                save_operators()
                 await context.bot.send_message(chat_id=chat_id, text=f"已删除 @{operator} 操作员权限")
             else:
                 await context.bot.send_message(chat_id=chat_id, text=f"@{operator} 不是当前群组的操作员")
@@ -501,7 +491,7 @@ async def handle_message(update: telegram.Update, context: ContextTypes.DEFAULT_
         if is_operator:
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '删除账单' 指令")
             transactions[chat_id].clear()
-            await context.bot.send_message(chat_id=chat_id, text="当前账单已结算💰，重新开始记账")
+            await context.bot.send_message(chat_id=chat_id, text="今日已清账💰，重新开始记账")
 
     elif message_text == "日切" and username == initial_admin_username:
         if is_operator:
@@ -531,13 +521,12 @@ async def handle_message(update: telegram.Update, context: ContextTypes.DEFAULT_
                 f"上次发送人：{last_user}"
             )
 
-    # 群发功能（仅私聊有效）
     if update.message.chat.type == "private":
         if message_text == "群发说明":
             help_text = """
 ### 群发指令说明
 ...
-            """  # 原群发说明内容保持不变，省略以节省空间
+            """
             await context.bot.send_message(chat_id=chat_id, text=help_text)
 
         if message_text.startswith("编队 "):
@@ -699,25 +688,22 @@ async def handle_message(update: telegram.Update, context: ContextTypes.DEFAULT_
 @app.route('/webhook', methods=['POST'])
 async def webhook():
     update = telegram.Update.de_json(request.get_json(), application.bot)
-    await application.process_update(update)  # 异步调用 process_update
+    await application.process_update(update)
     return '', 200
 
 # 主函数
 async def main():
     global application
-    load_operators()  # 启动时加载
+    load_operators()
     port = int(os.getenv("PORT", "10000"))
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Starting webhook on 0.0.0.0:{port}")
 
-    # 初始化 Telegram 应用
     global application
     application = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # 添加消息处理器
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
     application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL | filters.ANIMATION | filters.VIDEO, handle_message))
 
-    # 启动调度任务在独立线程
     import threading
     schedule_thread = threading.Thread(target=run_schedule, daemon=True)
     schedule_thread.start()
@@ -732,20 +718,21 @@ async def main():
         webhook_url = external_url + "/webhook"
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 设置 Webhook URL: {webhook_url}")
 
-    # 异步设置 Webhook
     await application.bot.set_webhook(url=webhook_url)
 
-    # 使用 gunicorn 运行
     class StandaloneApplication(BaseApplication):
         def __init__(self, app, options=None):
             self.application = app
+            self.options = options or {}
             super().__init__()
+
         def load_config(self):
-            config = {key: value for key, value in self.cfg.items() if key in self.cfg}
-            config.set('bind', f'0.0.0.0:{port}')
-            config.set('workers', 1)
+            for key, value in self.options.items():
+                self.cfg.set(key, value)
+
         def load(self):
             return self.application
+
     options = {
         'bind': f'0.0.0.0:{port}',
         'workers': 1,
