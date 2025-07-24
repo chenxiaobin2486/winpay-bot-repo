@@ -12,6 +12,7 @@ import string
 import schedule
 import sqlite3
 from contextlib import contextmanager
+import waitress
 
 # 定义 Flask 应用
 app = Flask(__name__)
@@ -36,7 +37,8 @@ templates = {}  # {模板名: {"message": 广告文, "file_id": 文件ID}}
 # SQLite 数据库操作
 def init_db():
     try:
-        with sqlite3.connect('/opt/render/project/data/operators.db') as conn:
+        os.makedirs('/data', exist_ok=True)
+        with sqlite3.connect('/data/operators.db') as conn:
             cursor = conn.cursor()
             cursor.execute('''CREATE TABLE IF NOT EXISTS operators
                              (chat_id TEXT, username TEXT, PRIMARY KEY (chat_id, username))''')
@@ -49,7 +51,7 @@ def init_db():
 
 def get_operators(chat_id):
     try:
-        with sqlite3.connect('/opt/render/project/data/operators.db') as conn:
+        with sqlite3.connect('/data/operators.db') as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT username FROM operators WHERE chat_id = ?', (chat_id,))
             return {row[0]: True for row in cursor.fetchall()}
@@ -59,17 +61,17 @@ def get_operators(chat_id):
 
 def add_operator(chat_id, username):
     try:
-        with sqlite3.connect('/opt/render/project/data/operators.db') as conn:
+        with sqlite3.connect('/data/operators.db') as conn:
             cursor = conn.cursor()
             cursor.execute('INSERT OR IGNORE INTO operators (chat_id, username) VALUES (?, ?)', (chat_id, username))
             conn.commit()
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 添加操作员: chat_id={chat_id}, username={username}")
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')]] 添加操作员: chat_id={chat_id}, username={username}")
     except sqlite3.Error as e:
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 添加操作员失败: {e}")
 
 def remove_operator(chat_id, username):
     try:
-        with sqlite3.connect('/opt/render/project/data/operators.db') as conn:
+        with sqlite3.connect('/data/operators.db') as conn:
             cursor = conn.cursor()
             cursor.execute('DELETE FROM operators WHERE chat_id = ? AND username = ?', (chat_id, username))
             conn.commit()
@@ -215,10 +217,10 @@ async def heartbeat():
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 心跳检测，保持活跃")
 
 async def run_schedule():
-    schedule.every(5).minutes.do(lambda: asyncio.run(heartbeat()))
+    schedule.every(15).minutes.do(lambda: asyncio.run(heartbeat()))  # 每 15 分钟一次
     while True:
         schedule.run_pending()
-        await asyncio.sleep(60)  # 每分钟检查一次
+        await asyncio.sleep(60)
 
 # 处理所有消息
 async def handle_message(update, context: ContextTypes.DEFAULT_TYPE):
@@ -463,7 +465,7 @@ async def handle_message(update, context: ContextTypes.DEFAULT_TYPE):
 
     elif message_text.startswith("设置入款费率"):
         if is_operator and is_accounting_enabled.get(chat_id, True):
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '设置入款费率' 指令，费率: {message_text.replace('设置入款费率', '').strip()}")
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')]] 匹配到 '设置入款费率' 指令，费率: {message_text.replace('设置入款费率', '').strip()}")
             try:
                 rate = float(message_text.replace("设置入款费率", "").strip()) / 100
                 exchange_rates[chat_id]["deposit_fee"] = rate
@@ -534,7 +536,7 @@ async def handle_message(update, context: ContextTypes.DEFAULT_TYPE):
         if is_operator and is_accounting_enabled.get(chat_id, True):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '删除账单' 指令")
             transactions[chat_id].clear()
-            await context.bot.send_message(chat_id=chat_id, text="今日已清账💰，重新开始记账")
+            await context.bot.send_message(chat_id=chat_id, text="当前账单已结算💰，重新开始记账")
 
     elif message_text == "日切" and username == initial_admin_username:
         if is_operator and is_accounting_enabled.get(chat_id, True):
@@ -736,7 +738,7 @@ async def webhook():
     return '', 200
 
 # 主函数
-def main():
+async def main():
     # 初始化数据库
     init_db()
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 加载操作员: {operators}")
@@ -752,10 +754,9 @@ def main():
     application.add_handler(telegram.ext.MessageHandler(telegram.ext.filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
     application.add_handler(telegram.ext.MessageHandler(telegram.ext.filters.TEXT | telegram.ext.filters.PHOTO | telegram.ext.filters.Document.ALL | telegram.ext.filters.ANIMATION | telegram.ext.filters.VIDEO, handle_message))
 
-    # 启动 Flask 和调度任务
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.create_task(run_schedule())  # 启动心跳任务
+    # 启动调度任务
+    loop = asyncio.get_event_loop()
+    loop.create_task(run_schedule())
 
     external_url = os.getenv("RENDER_EXTERNAL_URL", "winpay-bot-repo.onrender.com").strip()
     if not external_url:
@@ -767,17 +768,11 @@ def main():
         webhook_url = external_url + "/webhook"
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 设置 Webhook URL: {webhook_url}")
 
-    try:
-        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 尝试启动 Webhook...")
-        # 设置 Telegram Webhook
-        loop.run_until_complete(application.bot.set_webhook(url=webhook_url))
-        # 启动 Flask 服务器
-        app.run(host='0.0.0.0', port=port)
-    except Exception as e:
-        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Webhook 设置失败: {e}")
-    finally:
-        loop.run_until_complete(application.shutdown())
-        loop.close()
+    # 异步设置 Webhook
+    await application.bot.set_webhook(url=webhook_url)
+
+    # 使用 waitress 异步运行 Flask
+    waitress.serve(app, host='0.0.0.0', port=port)
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())
