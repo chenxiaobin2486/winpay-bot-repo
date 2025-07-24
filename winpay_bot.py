@@ -37,8 +37,9 @@ templates = {}  # {模板名: {"message": 广告文, "file_id": 文件ID}}
 # SQLite 数据库操作
 def init_db():
     try:
-        os.makedirs('/data', exist_ok=True)
-        with sqlite3.connect('/data/operators.db') as conn:
+        os.makedirs('data', exist_ok=True)  # 使用相对路径 data/
+        db_path = os.path.join('data', 'operators.db')
+        with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('''CREATE TABLE IF NOT EXISTS operators
                              (chat_id TEXT, username TEXT, PRIMARY KEY (chat_id, username))''')
@@ -51,7 +52,8 @@ def init_db():
 
 def get_operators(chat_id):
     try:
-        with sqlite3.connect('/data/operators.db') as conn:
+        db_path = os.path.join('data', 'operators.db')
+        with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT username FROM operators WHERE chat_id = ?', (chat_id,))
             return {row[0]: True for row in cursor.fetchall()}
@@ -61,7 +63,8 @@ def get_operators(chat_id):
 
 def add_operator(chat_id, username):
     try:
-        with sqlite3.connect('/data/operators.db') as conn:
+        db_path = os.path.join('data', 'operators.db')
+        with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('INSERT OR IGNORE INTO operators (chat_id, username) VALUES (?, ?)', (chat_id, username))
             conn.commit()
@@ -71,7 +74,8 @@ def add_operator(chat_id, username):
 
 def remove_operator(chat_id, username):
     try:
-        with sqlite3.connect('/data/operators.db') as conn:
+        db_path = os.path.join('data', 'operators.db')
+        with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('DELETE FROM operators WHERE chat_id = ? AND username = ?', (chat_id, username))
             conn.commit()
@@ -536,7 +540,7 @@ async def handle_message(update, context: ContextTypes.DEFAULT_TYPE):
         if is_operator and is_accounting_enabled.get(chat_id, True):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '删除账单' 指令")
             transactions[chat_id].clear()
-            await context.bot.send_message(chat_id=chat_id, text="今日已清账💰，重新开始记账")
+            await context.bot.send_message(chat_id=chat_id, text="当前账单已结算💰，重新开始记账")
 
     elif message_text == "日切" and username == initial_admin_username:
         if is_operator and is_accounting_enabled.get(chat_id, True):
