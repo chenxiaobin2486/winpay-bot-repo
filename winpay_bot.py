@@ -536,7 +536,7 @@ async def handle_message(update, context: ContextTypes.DEFAULT_TYPE):
         if is_operator and is_accounting_enabled.get(chat_id, True):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '删除账单' 指令")
             transactions[chat_id].clear()
-            await context.bot.send_message(chat_id=chat_id, text="当前账单已结算💰，重新开始记账")
+            await context.bot.send_message(chat_id=chat_id, text="今日已清账💰，重新开始记账")
 
     elif message_text == "日切" and username == initial_admin_username:
         if is_operator and is_accounting_enabled.get(chat_id, True):
