@@ -1,8 +1,6 @@
-# 导入必要的模块（保持原有导入）
+from flask import Flask, request
 import telegram
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
-from flask import Flask, request
-import re
 import os
 import time
 from datetime import datetime, timezone, timedelta
@@ -313,7 +311,7 @@ async def handle_message(update: telegram.Update, context: ContextTypes.DEFAULT_
 
     elif message_text == "恢复记账":
         if is_operator:
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '恢复记账' 指令")
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')]] 匹配到 '恢复记账' 指令")
             is_accounting_enabled[chat_id] = True
             await context.bot.send_message(chat_id=chat_id, text="记账功能已恢复")
 
@@ -491,7 +489,7 @@ async def handle_message(update: telegram.Update, context: ContextTypes.DEFAULT_
         if is_operator:
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '删除账单' 指令")
             transactions[chat_id].clear()
-            await context.bot.send_message(chat_id=chat_id, text="今日已清账💰，重新开始记账")
+            await context.bot.send_message(chat_id=chat_id, text="当前账单已结算💰，重新开始记账")
 
     elif message_text == "日切" and username == initial_admin_username:
         if is_operator:
@@ -720,24 +718,21 @@ async def main():
 
     await application.bot.set_webhook(url=webhook_url)
 
-    class StandaloneApplication(BaseApplication):
-        def __init__(self, app, options=None):
-            self.application = app
-            self.options = options or {}
-            super().__init__()
+class StandaloneApplication(BaseApplication):
+    def __init__(self, app, options=None):
+        self.application = app
+        self.options = options or {}
+        super().__init__()
 
-        def load_config(self):
-            for key, value in self.options.items():
-                self.cfg.set(key, value)
+    def load_config(self):
+        for key, value in self.options.items():
+            self.cfg.set(key, value)
 
-        def load(self):
-            return self.application
+    def load(self):
+        return self.application
 
-    options = {
-        'bind': f'0.0.0.0:{port}',
-        'workers': 1,
-    }
-    StandaloneApplication(app, options).run()
-
-if __name__ == '__main__':
-    asyncio.run(main())
+options = {
+    'bind': f'0.0.0.0:{port}',
+    'workers': 1,
+}
+StandaloneApplication(app, options).run()
