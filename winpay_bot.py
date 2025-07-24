@@ -11,9 +11,8 @@ import random
 import string
 import schedule
 import asyncio
-import uvicorn  # 异步服务器
 import json
-from wsgi_to_asgi import WsgiToAsgi  # 添加 WsgiToAsgi 适配器
+from gunicorn.app.base import BaseApplication
 
 # 定义 Flask 应用
 app = Flask(__name__)
@@ -736,14 +735,22 @@ async def main():
     # 异步设置 Webhook
     await application.bot.set_webhook(url=webhook_url)
 
-    # 使用 WsgiToAsgi 适配 Flask 为 ASGI
-    asgi_app = WsgiToAsgi(app)
-
-    # 使用 uvicorn 运行服务
-    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 启动 uvicorn 服务...")
-    config = uvicorn.Config(asgi_app, host="0.0.0.0", port=port)
-    server = uvicorn.Server(config)
-    await server.serve()
+    # 使用 gunicorn 运行
+    class StandaloneApplication(BaseApplication):
+        def __init__(self, app, options=None):
+            self.application = app
+            super().__init__()
+        def load_config(self):
+            config = {key: value for key, value in self.cfg.items() if key in self.cfg}
+            config.set('bind', f'0.0.0.0:{port}')
+            config.set('workers', 1)
+        def load(self):
+            return self.application
+    options = {
+        'bind': f'0.0.0.0:{port}',
+        'workers': 1,
+    }
+    StandaloneApplication(app, options).run()
 
 if __name__ == '__main__':
     asyncio.run(main())
