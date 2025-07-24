@@ -465,7 +465,7 @@ async def handle_message(update, context: ContextTypes.DEFAULT_TYPE):
 
     elif message_text.startswith("设置入款费率"):
         if is_operator and is_accounting_enabled.get(chat_id, True):
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')]] 匹配到 '设置入款费率' 指令，费率: {message_text.replace('设置入款费率', '').strip()}")
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '设置入款费率' 指令，费率: {message_text.replace('设置入款费率', '').strip()}")
             try:
                 rate = float(message_text.replace("设置入款费率", "").strip()) / 100
                 exchange_rates[chat_id]["deposit_fee"] = rate
