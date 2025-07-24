@@ -1,6 +1,7 @@
 # 导入必要的模块
 import telegram
-from telegram.ext import Application, MessageHandler, filters, ApplicationBuilder
+from telegram.ext import Application, ApplicationBuilder, ContextTypes
+from flask import Flask, request
 import re
 import os
 import asyncio
@@ -8,9 +9,12 @@ from datetime import datetime, timezone, timedelta
 import pytz
 import random
 import string
-import schedule  # 添加 schedule 模块
-import sqlite3  # 添加 sqlite3 模块
+import schedule
+import sqlite3
 from contextlib import contextmanager
+
+# 定义 Flask 应用
+app = Flask(__name__)
 
 # 定义 Bot Token（从环境变量获取）
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7908773608:AAFFqLmGkJ9zbsuymQTFzJxy5IyeN1E9M-U")
@@ -74,7 +78,7 @@ def remove_operator(chat_id, username):
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 删除操作员失败: {e}")
 
 # 账单处理函数
-async def handle_bill(update, context):
+async def handle_bill(update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.message.chat_id)
     if chat_id not in transactions:
         transactions[chat_id] = []
@@ -99,7 +103,6 @@ async def handle_bill(update, context):
             else:  # 有 ->，调整金额
                 amount = float(parts[0].split()[1].rstrip('u'))
                 adjusted = float(parts[1].split()[0].rstrip('u'))
-                # 从交易记录中提取历史汇率和费率
                 rate_info = parts[1].split("[rate=")[1].rstrip("]").split(", fee=")
                 historical_rate = float(rate_info[0])
                 historical_fee = float(rate_info[1])
@@ -119,7 +122,6 @@ async def handle_bill(update, context):
             else:  # 有 ->，调整金额
                 amount = float(parts[0].split()[1].rstrip('u'))
                 adjusted = float(parts[1].split()[0].rstrip('u'))
-                # 从交易记录中提取历史汇率和费率
                 rate_info = parts[1].split("[rate=")[1].rstrip("]").split(", fee=")
                 historical_rate = float(rate_info[0])
                 historical_fee = float(rate_info[1])
@@ -163,7 +165,7 @@ def format_exchange_rate(rate):
     return formatted
 
 # 欢迎新成员
-async def welcome_new_member(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+async def welcome_new_member(update: telegram.Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.message.chat_id)
     if chat_id not in user_history:
         user_history[chat_id] = {}
@@ -219,7 +221,7 @@ async def run_schedule():
         await asyncio.sleep(60)  # 每分钟检查一次
 
 # 处理所有消息
-async def handle_message(update, context):
+async def handle_message(update, context: ContextTypes.DEFAULT_TYPE):
     global operators, transactions, user_history, address_verify_count, is_accounting_enabled, exchange_rates, team_groups, scheduled_tasks, last_file_id, last_file_message, templates
     message_text = update.message.text.strip() if update.message.text else ""
     chat_id = str(update.message.chat_id)
@@ -383,7 +385,6 @@ async def handle_message(update, context):
                 else:
                     amount = float(amount_str)
                     adjusted_amount = amount * (1 - deposit_fee_rate) / exchange_rate_deposit
-                    # 记录交易时保存当时的汇率和费率
                     transaction = f"入款 {format_amount(amount)} {timestamp} -> {format_amount(adjusted_amount)}u [rate={exchange_rate_deposit}, fee={deposit_fee_rate}]"
                 transactions[chat_id].append(transaction)
                 await handle_bill(update, context)
@@ -406,7 +407,6 @@ async def handle_message(update, context):
                 else:
                     amount = float(amount_str)
                     adjusted_amount = amount * (1 + withdraw_fee_rate) / exchange_rate_withdraw
-                    # 记录交易时保存当时的汇率和费率
                     transaction = f"下发 {format_amount(amount)} {timestamp} -> {format_amount(adjusted_amount)}u [rate={exchange_rate_withdraw}, fee={withdraw_fee_rate}]"
                 transactions[chat_id].append(transaction)
                 await handle_bill(update, context)
@@ -534,7 +534,7 @@ async def handle_message(update, context):
         if is_operator and is_accounting_enabled.get(chat_id, True):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '删除账单' 指令")
             transactions[chat_id].clear()
-            await context.bot.send_message(chat_id=chat_id, text="当前账单已结算💰，重新开始记账")
+            await context.bot.send_message(chat_id=chat_id, text="今日已清账💰，重新开始记账")
 
     elif message_text == "日切" and username == initial_admin_username:
         if is_operator and is_accounting_enabled.get(chat_id, True):
@@ -728,6 +728,13 @@ async def handle_message(update, context):
             else:
                 await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可查看任务列表，请联系管理员设置权限")
 
+# Webhook 端点
+@app.route('/webhook', methods=['POST'])
+async def webhook():
+    update = telegram.Update.de_json(request.get_json(), application.bot)
+    await application.process_update(update)
+    return '', 200
+
 # 主函数
 def main():
     # 初始化数据库
@@ -735,19 +742,20 @@ def main():
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 加载操作员: {operators}")
 
     port = int(os.getenv("PORT", "10000"))
-    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Listening on port: {port}")
+    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Starting webhook on 0.0.0.0:{port}")
 
-    # 使用 ApplicationBuilder 构建应用
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    # 异步初始化应用
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(application.initialize())
+    # 初始化 Telegram 应用
+    global application
+    application = Application.builder().token(BOT_TOKEN).build()
 
     # 添加消息处理器
-    application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
-    application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL | filters.ANIMATION | filters.VIDEO, handle_message))
+    application.add_handler(telegram.ext.MessageHandler(telegram.ext.filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
+    application.add_handler(telegram.ext.MessageHandler(telegram.ext.filters.TEXT | telegram.ext.filters.PHOTO | telegram.ext.filters.Document.ALL | telegram.ext.filters.ANIMATION | telegram.ext.filters.VIDEO, handle_message))
+
+    # 启动 Flask 和调度任务
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.create_task(run_schedule())  # 启动心跳任务
 
     external_url = os.getenv("RENDER_EXTERNAL_URL", "winpay-bot-repo.onrender.com").strip()
     if not external_url:
@@ -758,18 +766,13 @@ def main():
     else:
         webhook_url = external_url + "/webhook"
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 设置 Webhook URL: {webhook_url}")
+
     try:
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 尝试启动 Webhook...")
-        loop.create_task(run_schedule())  # 启动心跳任务
-        # 运行 Webhook
-        loop.run_until_complete(
-            application.run_webhook(
-                listen="0.0.0.0",
-                port=port,
-                url_path="/webhook",
-                webhook_url=webhook_url
-            )
-        )
+        # 设置 Telegram Webhook
+        loop.run_until_complete(application.bot.set_webhook(url=webhook_url))
+        # 启动 Flask 服务器
+        app.run(host='0.0.0.0', port=port)
     except Exception as e:
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Webhook 设置失败: {e}")
     finally:
