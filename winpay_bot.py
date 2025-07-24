@@ -79,7 +79,7 @@ def remove_operator(chat_id, username):
             cursor = conn.cursor()
             cursor.execute('DELETE FROM operators WHERE chat_id = ? AND username = ?', (chat_id, username))
             conn.commit()
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')]] 删除操作员: chat_id={chat_id}, username={username}")
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 删除操作员: chat_id={chat_id}, username={username}")
     except sqlite3.Error as e:
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 删除操作员失败: {e}")
 
