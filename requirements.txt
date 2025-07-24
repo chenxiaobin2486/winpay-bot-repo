@@ -4,3 +4,4 @@ uvicorn==0.30.0
 pytz==2024.2
 schedule==1.2.2
 requests==2.32.3
+wsgi-to-asgi==0.1.0  # 添加此行以支持 ASGI 适配
