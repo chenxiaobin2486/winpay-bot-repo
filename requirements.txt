@@ -1,5 +1,6 @@
 python-telegram-bot[webhooks]==21.4
-flask==3.0.3  # 最新稳定版，兼容 Python 3.11
+flask==3.0.3
+waitress==2.1.2
 pytz==2024.2
 schedule==1.2.2
 requests==2.32.3
