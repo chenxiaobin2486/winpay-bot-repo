@@ -13,6 +13,7 @@ import schedule
 import sqlite3
 from contextlib import contextmanager
 import uvicorn  # 替换 waitress
+import pkg_resources  # 用于调试依赖
 
 # 定义 Flask 应用
 app = Flask(__name__)
@@ -743,6 +744,9 @@ async def webhook():
 
 # 主函数
 async def main():
+    # 调试：打印已安装的依赖
+    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Installed packages: {pkg_resources.working_set}")
+    
     # 初始化数据库
     init_db()
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 加载操作员: {operators}")
