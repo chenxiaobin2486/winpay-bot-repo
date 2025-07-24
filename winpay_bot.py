@@ -61,7 +61,7 @@ def add_operator(chat_id, username):
             conn.commit()
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 添加操作员: chat_id={chat_id}, username={username}")
     except sqlite3.Error as e:
-        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')]] 添加操作员失败: {e}")
+        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 添加操作员失败: {e}")
 
 def remove_operator(chat_id, username):
     try:
