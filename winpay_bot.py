@@ -274,7 +274,7 @@ async def handle_message(update, context: ContextTypes.DEFAULT_TYPE):
         elif first_name and first_name != old_first_name and username == old_username:
             warning = f"⚠️防骗提示⚠️ (@{username}) 的昵称不一致\n之前昵称：{old_first_name}\n现在昵称：{first_name}\n修改时间：{timestamp}\n请注意查证‼️"
             await context.bot.send_message(chat_id=chat_id, text=warning)
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')]] 昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
     user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
 
     # 私聊中处理文件消息
