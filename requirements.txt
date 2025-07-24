@@ -1,6 +1,6 @@
 python-telegram-bot==21.4
 flask==3.0.3
-waitress==2.1.2
+uvicorn==0.30.0
 pytz==2024.2
 schedule==1.2.2
 requests==2.32.3
