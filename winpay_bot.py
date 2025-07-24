@@ -12,7 +12,7 @@ import string
 import schedule
 import sqlite3
 from contextlib import contextmanager
-import waitress
+import uvicorn  # 替换 waitress
 
 # 定义 Flask 应用
 app = Flask(__name__)
@@ -79,7 +79,7 @@ def remove_operator(chat_id, username):
             cursor = conn.cursor()
             cursor.execute('DELETE FROM operators WHERE chat_id = ? AND username = ?', (chat_id, username))
             conn.commit()
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 删除操作员: chat_id={chat_id}, username={username}")
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')]] 删除操作员: chat_id={chat_id}, username={username}")
     except sqlite3.Error as e:
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 删除操作员失败: {e}")
 
@@ -775,8 +775,8 @@ async def main():
     # 异步设置 Webhook
     await application.bot.set_webhook(url=webhook_url)
 
-    # 使用 waitress 异步运行 Flask
-    waitress.serve(app, host='0.0.0.0', port=port)
+    # 使用 uvicorn 运行 Flask 应用
+    uvicorn.run(app, host='0.0.0.0', port=port)
 
 if __name__ == '__main__':
     asyncio.run(main())
