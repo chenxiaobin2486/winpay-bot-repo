@@ -1,5 +1,5 @@
 python-telegram-bot[webhooks]==21.4
-aiohttp==3.9.5  # 最新兼容版本，视需求调整
+flask==3.0.3  # 最新稳定版，兼容 Python 3.11
 pytz==2024.2
 schedule==1.2.2
 requests==2.32.3
