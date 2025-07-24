@@ -57,7 +57,7 @@ def save_operators():
         json.dump(operators, f)
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 保存操作员: {operators}")
 
-# 账单处理函数（同步版本）
+# 账单处理函数
 def handle_bill(update, context):
     chat_id = str(update.message.chat_id)
     if chat_id not in transactions:
@@ -144,7 +144,7 @@ def format_exchange_rate(rate):
         return f"{rate:.2f}"
     return formatted
 
-# 欢迎新成员（同步版本）
+# 欢迎新成员
 def welcome_new_member(update, context):
     chat_id = str(update.message.chat_id)
     if chat_id not in user_history:
@@ -173,7 +173,7 @@ def welcome_new_member(update, context):
                     context.bot.send_message(chat_id=chat_id, text=warning)
                     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
 
-# 群发执行函数（同步版本）
+# 群发执行函数
 def send_broadcast(context, task):
     team_name = task["team"]
     template_name = task["template"]
@@ -199,7 +199,7 @@ def run_schedule():
         schedule.run_pending()
         time.sleep(60)
 
-# 处理所有消息（同步版本）
+# 处理所有消息
 def handle_message(update, context):
     global operators, transactions, user_history, address_verify_count, is_accounting_enabled, exchange_rates, team_groups, scheduled_tasks, last_file_id, last_file_message, templates
     message_text = update.message.text.strip() if update.message.text else ""
@@ -313,7 +313,7 @@ def handle_message(update, context):
 
     elif message_text == "恢复记账":
         if is_operator:
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '恢复记账' 指令")
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')]] 匹配到 '恢复记账' 指令")
             is_accounting_enabled[chat_id] = True
             context.bot.send_message(chat_id=chat_id, text="记账功能已恢复")
 
@@ -684,7 +684,7 @@ def handle_message(update, context):
             else:
                 context.bot.send_message(chat_id=chat_id, text=f"仅操作员可查看任务列表，请联系管理员设置权限")
 
-# Webhook 端点（同步版本）
+# Webhook 端点
 def webhook():
     update = telegram.Update.de_json(request.get_json(), application.bot)
     application.process_update(update)
@@ -731,11 +731,13 @@ class StandaloneApplication(BaseApplication):
     def load(self):
         return self.application
 
+    def run(self):
+        main()  # 确保 main() 被调用以初始化 Webhook
+        super().run()
+
 options = {
     'bind': f'0.0.0.0:{port}',
     'workers': 1,
 }
-StandaloneApplication(app, options).run()
-
-# 注册 Webhook 路由
-app.route('/webhook', methods=['POST'])(webhook)
+if __name__ == "__main__":
+    StandaloneApplication(app, options).run()
