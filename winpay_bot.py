@@ -31,10 +31,12 @@ async def handle_bill(update, context):
     chat_id = str(update.message.chat_id)
     if chat_id not in transactions:
         transactions[chat_id] = []
+    # 限制显示最近6笔交易
     recent_transactions = transactions[chat_id][-6:] if len(transactions[chat_id]) >= 6 else transactions[chat_id]
+    # 计算总笔数，基于所有交易
+    deposit_count = sum(1 for t in transactions[chat_id] if t.startswith("入款"))
+    withdraw_count = sum(1 for t in transactions[chat_id] if t.startswith("下发"))
     bill = "当前账单\n"
-    deposit_count = sum(1 for t in recent_transactions if t.startswith("入款"))
-    withdraw_count = sum(1 for t in recent_transactions if t.startswith("下发"))
 
     # 当前汇率和费率，仅用于账单底部显示
     exchange_rate_deposit = exchange_rates.get(chat_id, {"deposit": 1.0})["deposit"]
