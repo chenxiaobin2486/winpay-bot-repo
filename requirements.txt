@@ -2,6 +2,6 @@ python-telegram-bot[webhooks]==20.6
 pytz==2023.3
 Flask==2.3.3
 requests==2.31.0
-pandas==2.2.2
+pandas==2.0.3
 python-dateutil==2.8.2
 Werkzeug==2.3.7
