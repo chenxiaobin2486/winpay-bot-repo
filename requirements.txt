@@ -1,4 +1,20 @@
+# Telegram 机器人核心
 python-telegram-bot[webhooks]==20.6
-Flask==3.0.3
+
+# 时区处理
 pytz==2023.3
-requests
+
+# Web 服务器（Webhook 用）
+Flask==2.3.3
+
+# HTTP 请求支持
+requests==2.31.0
+
+# 数据处理（如果有 CSV、Excel 处理可用）
+pandas==2.0.3
+
+# 日期时间辅助（pandas 内部依赖，但显式声明避免版本不一致）
+python-dateutil==2.8.2
+
+# 兼容性依赖（Flask、PTB 部分依赖）
+Werkzeug==2.3.7
