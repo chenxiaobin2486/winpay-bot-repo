@@ -4,8 +4,8 @@ import requests
 
 app = Flask(__name__)
 
-# 配置 winpay_bot API URL
-BOT_API_URL = os.getenv("BOT_API_URL", "https://your-winpay-bot.onrender.com") + ":5001"  # 添加端口
+# 配置 winpay_bot API URL（需替换为实际 URL 和端口 5001）
+BOT_API_URL = os.getenv("BOT_API_URL", "https://your-winpay-bot.onrender.com:5001")
 
 @app.route('/Telegram/BillReport')
 def bill_report():
@@ -27,5 +27,5 @@ def health_check():
     return "OK", 200
 
 if __name__ == '__main__':
-    port = int(os.getenv("PORT", 5000))
+    port = int(os.getenv("PORT", 5000))  # Render 默认端口
     app.run(host='0.0.0.0', port=port)
