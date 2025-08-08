@@ -422,7 +422,7 @@ async def handle_message(update, context):
             await handle_bill(update, context)
             
         elif message_text == "删除":
-        if is_operator and is_accounting_enabled.get(chat_id, True):
+         if is_operator and is_accounting_enabled.get(chat_id, True):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '删除' 指令")
             if update.message.reply_to_message:
                 original_message = update.message.reply_to_message.text.strip()
