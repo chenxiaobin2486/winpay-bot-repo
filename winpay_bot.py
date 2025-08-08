@@ -1,5 +1,6 @@
 # 导入必要的模块
 import asyncio
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, MessageHandler, filters, ApplicationBuilder
 import telegram.ext
 import re
@@ -102,7 +103,13 @@ async def handle_bill(update, context):
             bill += f"总出款：{format_amount(total_withdraw)}  |  {format_amount(total_withdraw_adjusted)}u\n"
         bill += f"总余额：{format_amount(balance)}u"
 
-    await context.bot.send_message(chat_id=chat_id, text=bill if transactions[chat_id] else "无交易记录")
+    # 添加内联按钮
+    keyboard = [
+        [InlineKeyboardButton("查看完整账单", url=f"https://bill-web-app.onrender.com/Telegram/BillReport?group_id={chat_id}")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await context.bot.send_message(chat_id=chat_id, text=bill if transactions[chat_id] else "无交易记录", reply_markup=reply_markup)
 
 # 格式化金额函数
 def format_amount(amount):
@@ -414,7 +421,7 @@ async def handle_message(update, context):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '账单' 或 '+0' 指令")
             await handle_bill(update, context)
 
-    elif message_text == "删除":
+        elif message_text == "删除":
         if is_operator and is_accounting_enabled.get(chat_id, True):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '删除' 指令")
             if update.message.reply_to_message:
@@ -520,129 +527,87 @@ async def handle_message(update, context):
    - 示例：`删除 广告队 -1001234567890`  
    - 结果：成功时回复“群组已从编队移除”，若队名或群 ID 无效则回复“任务目标有误请检查”。
 
-### 注意事项
-- **私聊限制**：以上指令仅在私聊与机器人对话时有效。
-- **文件支持**：支持动图（`.gif`）、视频（`.mp4`）和图片（`.jpg/.png`），发送文件后自动返回文件 ID。
-- **调度功能**：任务调度（如 `任务` 和 `任务列表`）当前不可用，请升级到 SuperGrok 订阅计划以启用，详情请访问 https://x.ai/grok。
-- **错误处理**：编队不存在或群 ID 无效时，回复“任务目标有误请检查”。
+5. **任务列表**  
+   - 指令：`任务列表`  
+   - 功能：查看当前所有已调度任务（当前版本无调度功能，仅显示提示）。  
+   - 结果：回复“暂无调度任务，请升级到 SuperGrok 订阅计划以启用调度功能”。
+
+6. **创建任务**（当前无效）  
+   - 指令：`任务 队名 模板名 时间`  
+   - 功能：调度指定队名和模板的群发任务（时间格式：YYYY-MM-DD HH:MM，例如 2025-08-10 14:30）。  
+   - 结果：当前版本回复“任务调度暂未开放，请升级到 SuperGrok 订阅计划”。
             """
             await context.bot.send_message(chat_id=chat_id, text=help_text)
 
-        # 编队指令
-        if message_text.startswith("编队 "):
-            parts = message_text.split(" ", 2)
-            if len(parts) == 3 and parts[1] and parts[2]:
-                team_name = parts[1]
-                if username and (username in operating_groups.get("private", {}) or username == initial_admin_username):
-                    try:
-                        group_ids = [gid.strip() for gid in re.split(r'[,，]', parts[2]) if gid.strip()]
-                        if not group_ids:
-                            raise ValueError("群ID列表为空")
-                        for gid in group_ids:
-                            if not gid.startswith("-") or not gid[1:].isdigit():
-                                raise ValueError(f"无效群ID: {gid}")
-                        team_groups[team_name] = list(set(team_groups.get(team_name, []) + group_ids))
-                        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 编队输入: 队名={team_name}, 群ID={group_ids}")
-                        await context.bot.send_message(chat_id=chat_id, text=f"编队已更新: {team_name}，包含群组: {', '.join(group_ids)}")
-                    except ValueError as e:
-                        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 编队解析失败: {e}")
-                        await context.bot.send_message(chat_id=chat_id, text=f"任务目标有误请检查: {e}")
-                else:
-                    await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可执行此操作，请联系管理员设置权限")
-            else:
-                await context.bot.send_message(chat_id=chat_id, text="使用格式：编队 队名 群ID,群ID")
-            return
-
-        # 删除编队群组
-        if message_text.startswith("删除 "):
-            parts = message_text.split(" ", 2)
-            if len(parts) == 3 and parts[1] and parts[2]:
-                team_name = parts[1]
-                if username and (username in operating_groups.get("private", {}) or username == initial_admin_username):
-                    try:
-                        group_ids = [gid.strip() for gid in re.split(r'[,，]', parts[2]) if gid.strip()]
-                        if not group_ids:
-                            raise ValueError("群ID列表为空")
-                        if team_name in team_groups:
-                            for gid in group_ids:
-                                if gid in team_groups[team_name]:
-                                    team_groups[team_name].remove(gid)
-                            if not team_groups[team_name]:
-                                del team_groups[team_name]
-                            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 删除群组: 队名={team_name}, 群ID={group_ids}")
-                            await context.bot.send_message(chat_id=chat_id, text="群组已从编队移除")
-                        else:
-                            await context.bot.send_message(chat_id=chat_id, text="任务目标有误请检查: 编队不存在")
-                    except ValueError as e:
-                        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 删除解析失败: {e}")
-                        await context.bot.send_message(chat_id=chat_id, text=f"任务目标有误请检查: {e}")
-                else:
-                    await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可执行此操作，请联系管理员设置权限")
-            else:
-                await context.bot.send_message(chat_id=chat_id, text="使用格式：删除 队名 群ID,群ID")
-            return
-
         # 编辑模板
-        if message_text.startswith("编辑 "):
+        elif message_text.startswith("编辑"):
             parts = message_text.split(" ", 2)
-            if len(parts) == 3 and parts[1] and parts[2]:
+            if len(parts) == 3 and username and (username in operating_groups.get("private", {}) or username == initial_admin_username):
                 template_name = parts[1]
-                message = parts[2]
-                if username and (username in operating_groups.get("private", {}) or username == initial_admin_username):
-                    file_id = last_file_id.get(chat_id)
-                    if file_id:
-                        templates[template_name] = {"message": message, "file_id": file_id}
-                        await context.bot.send_message(chat_id=chat_id, text=f"模板 {template_name} 已更新")
-                    else:
-                        await context.bot.send_message(chat_id=chat_id, text="请先发送动图、视频或图片以获取文件 ID")
-                else:
-                    await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可执行此操作，请联系管理员设置权限")
+                message_content = parts[2].strip()
+                file_id = last_file_id.get(chat_id)
+                templates[template_name] = {"message": message_content, "file_id": file_id}
+                response = f"模板 '{template_name}' 已更新，内容：{message_content}"
+                if file_id:
+                    response += f"，关联文件 ID: {file_id}"
+                await context.bot.send_message(chat_id=chat_id, text=response)
             else:
-                await context.bot.send_message(chat_id=chat_id, text="使用格式：编辑 模板名 广告文")
+                await context.bot.send_message(chat_id=chat_id, text="格式错误，使用：编辑 模板名 广告文")
 
-        # 禁用任务和任务列表指令
-        if message_text.startswith("任务 ") or message_text == "任务列表":
-            await context.bot.send_message(chat_id=chat_id, text="群发任务功能当前不可用，请升级到 SuperGrok 订阅计划以启用，详情请访问 https://x.ai/grok")
+        # 创建/更新编队
+        elif message_text.startswith("编队"):
+            parts = message_text.split(" ", 2)
+            if len(parts) == 3 and username and (username in operating_groups.get("private", {}) or username == initial_admin_username):
+                team_name, group_ids = parts[1], parts[2].split(",")
+                valid_groups = [g.strip() for g in group_ids if g.strip().startswith("-100") and g.strip().replace("-100", "").isdigit()]
+                if valid_groups:
+                    team_groups[team_name] = valid_groups
+                    await context.bot.send_message(chat_id=chat_id, text="编队已更新")
+                else:
+                    await context.bot.send_message(chat_id=chat_id, text="任务目标有误请检查")
+            else:
+                await context.bot.send_message(chat_id=chat_id, text="格式错误，使用：编队 队名 -1001234567890, -1009876543210")
+
+        # 从编队删除群组
+        elif message_text.startswith("删除"):
+            parts = message_text.split(" ", 2)
+            if len(parts) == 3 and username and (username in operating_groups.get("private", {}) or username == initial_admin_username):
+                team_name, group_ids = parts[1], parts[2].split(",")
+                if team_name in team_groups:
+                    valid_groups = [g.strip() for g in group_ids if g.strip().startswith("-100") and g.strip().replace("-100", "").isdigit()]
+                    for group_id in valid_groups:
+                        if group_id in team_groups[team_name]:
+                            team_groups[team_name].remove(group_id)
+                    if not team_groups[team_name]:
+                        del team_groups[team_name]
+                    await context.bot.send_message(chat_id=chat_id, text="群组已从编队移除")
+                else:
+                    await context.bot.send_message(chat_id=chat_id, text="任务目标有误请检查")
+            else:
+                await context.bot.send_message(chat_id=chat_id, text="格式错误，使用：删除 队名 -1001234567890")
+
+        # 任务列表
+        elif message_text == "任务列表":
+            if username and (username in operating_groups.get("private", {}) or username == initial_admin_username):
+                await context.bot.send_message(chat_id=chat_id, text="暂无调度任务，请升级到 SuperGrok 订阅计划以启用调度功能")
+            else:
+                await context.bot.send_message(chat_id=chat_id, text="仅操作员可查看任务列表")
+
+        # 创建任务（当前无效）
+        elif message_text.startswith("任务"):
+            parts = message_text.split(" ", 3)
+            if len(parts) == 4 and username and (username in operating_groups.get("private", {}) or username == initial_admin_username):
+                team_name, template_name, time_str = parts[1], parts[2], parts[3]
+                await context.bot.send_message(chat_id=chat_id, text="任务调度暂未开放，请升级到 SuperGrok 订阅计划")
+            else:
+                await context.bot.send_message(chat_id=chat_id, text="格式错误，使用：任务 队名 模板名 2025-08-10 14:30")
 
 # 主函数
 def main():
-    port = int(os.getenv("PORT", "10000"))
-    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Listening on port: {port}")
-
-    # 使用 ApplicationBuilder 构建应用
     application = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    # 异步初始化应用
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(application.initialize())
-
-    # 添加消息处理器
+    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_message))
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
-    application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL | filters.ANIMATION | filters.VIDEO, handle_message))
+    application.run_polling()
 
-    external_url = os.getenv("RENDER_EXTERNAL_URL", "winpay-bot-repo.onrender.com").strip()
-    if not external_url.startswith("http"):
-        webhook_url = f"https://{external_url}/webhook"
-    else:
-        webhook_url = external_url + "/webhook"
-    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 设置 Webhook URL: {webhook_url}")
-    try:
-        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 尝试启动 Webhook...")
-        # 运行 Webhook
-        loop.run_until_complete(
-            application.run_webhook(
-                listen="0.0.0.0",
-                port=port,
-                url_path="/webhook",
-                webhook_url=webhook_url
-            )
-        )
-    except Exception as e:
-        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Webhook 设置失败: {e}")
-    finally:
-        loop.run_until_complete(application.shutdown())
-        loop.close()
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
