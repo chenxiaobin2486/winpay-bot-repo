@@ -591,6 +591,11 @@ async def handle_message(update, context):
         if message_text.startswith("任务 ") or message_text == "任务列表":
             await context.bot.send_message(chat_id=chat_id, text="群发任务功能当前不可用，请升级到 SuperGrok 订阅计划以启用，详情请访问 https://x.ai/grok")
 
+# 交易数据 API
+@app.route('/get_transactions/<chat_id>')
+def get_transactions_api(chat_id):
+    return jsonify(transactions.get(chat_id, []))
+
 # 运行 Flask 的函数
 def run_flask():
     flask_port = 5001  # API 端口
@@ -621,7 +626,7 @@ def main():
         flask_thread = threading.Thread(target=run_flask, daemon=True)
         flask_thread.start()
 
-        # 启动 Webhook
+        # 启动 Webhook 并保持主线程
         loop.run_until_complete(
             application.run_webhook(
                 listen="0.0.0.0",
@@ -637,4 +642,6 @@ def main():
         loop.close()
 
 if __name__ == '__main__':
-    main()
+    import threading
+    event = threading.Event()
+    event.wait()  # 保持主线程运行
