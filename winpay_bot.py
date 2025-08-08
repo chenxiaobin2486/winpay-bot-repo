@@ -604,29 +604,31 @@ def run_flask():
 # 主函数
 def main():
     webhook_port = int(os.getenv("PORT", "10000"))  # Webhook 端口
+    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Starting winpay_bot...")
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Webhook listening on port: {webhook_port}")
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] API listening on port: {5001}")
 
     application = ApplicationBuilder().token(BOT_TOKEN).build()
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    loop.run_until_complete(application.initialize())
 
-    application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
-    application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL | filters.ANIMATION | filters.VIDEO, handle_message))
-
-    external_url = os.getenv("RENDER_EXTERNAL_URL", "winpay-bot-repo.onrender.com").strip()
-    if not external_url.startswith("http"):
-        webhook_url = f"https://{external_url}/{BOT_TOKEN}"
-    else:
-        webhook_url = f"{external_url}/{BOT_TOKEN}"
-    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 设置 Webhook URL: {webhook_url}")
     try:
+        loop.run_until_complete(application.initialize())
+        application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
+        application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL | filters.ANIMATION | filters.VIDEO, handle_message))
+
+        external_url = os.getenv("RENDER_EXTERNAL_URL", "winpay-bot-repo.onrender.com").strip()
+        if not external_url.startswith("http"):
+            webhook_url = f"https://{external_url}/{BOT_TOKEN}"
+        else:
+            webhook_url = f"{external_url}/{BOT_TOKEN}"
+        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 设置 Webhook URL: {webhook_url}")
+
         # 启动 Flask 在独立线程
         flask_thread = threading.Thread(target=run_flask, daemon=True)
         flask_thread.start()
 
-        # 启动 Webhook 并保持主线程
+        # 启动 Webhook 并保持运行
         loop.run_until_complete(
             application.run_webhook(
                 listen="0.0.0.0",
@@ -642,6 +644,4 @@ def main():
         loop.close()
 
 if __name__ == '__main__':
-    import threading
-    event = threading.Event()
-    event.wait()  # 保持主线程运行
+    main()  # 直接运行 main
