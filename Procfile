@@ -1,1 +1,1 @@
-worker: python winpay_bot.py
+web: python app.py
