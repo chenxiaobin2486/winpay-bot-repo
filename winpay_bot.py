@@ -1,4 +1,5 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
+from flask_cors import CORS
 import asyncio
 from telegram.ext import Application, ApplicationBuilder, MessageHandler, filters
 import telegram.ext
@@ -10,6 +11,7 @@ import threading
 
 # 初始化 Flask 应用
 app = Flask(__name__)
+CORS(app)  # 启用 CORS，支持跨域请求
 
 # 定义全局变量
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7908773608:AAFFqLmGkJ9zbsuymQTFzJxy5IyeN1E9M-U")
@@ -589,28 +591,69 @@ async def handle_message(update, context):
         if message_text.startswith("任务 ") or message_text == "任务列表":
             await context.bot.send_message(chat_id=chat_id, text="群发任务功能当前不可用，请升级到 SuperGrok 订阅计划以启用，详情请访问 https://x.ai/grok")
 
-# 交易数据 API
+# 交易数据 API（添加分页和日志）
 @app.route('/get_transactions/<chat_id>')
 def get_transactions_api(chat_id):
-    return jsonify(transactions.get(chat_id, []))
+    try:
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 50))
+        transactions_list = transactions.get(chat_id, [])
+        total = len(transactions_list)
+        start = (page - 1) * per_page
+        end = start + per_page
+        paginated_transactions = transactions_list[start:end]
+        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] API 请求: /get_transactions/{chat_id}, page={page}, per_page={per_page}, 返回 {len(paginated_transactions)} 条记录")
+        return jsonify({
+            'transactions': paginated_transactions,
+            'total': total,
+            'page': page,
+            'per_page': per_page
+        })
+    except Exception as e:
+        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] API 错误: {e}")
+        return jsonify({'error': str(e)}), 500
 
-# 运行 Flask 的函数
+# 运行 Flask 的函数（使用 gunicorn）
 def run_flask():
-    flask_port = 5001  # API 端口
-    app.run(host='0.0.0.0', port=flask_port)
+    flask_port = int(os.getenv("FLASK_PORT", 5001))
+    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Starting Flask with gunicorn on port {flask_port}")
+    from gunicorn.app.base import BaseApplication
+
+    class FlaskApplication(BaseApplication):
+        def __init__(self, app, options=None):
+            self.options = options or {}
+            self.application = app
+            super().__init__()
+
+        def load_config(self):
+            for key, value in self.options.items():
+                self.cfg.set(key.lower(), value)
+
+        def load(self):
+            return self.application
+
+    options = {
+        'bind': f'0.0.0.0:{flask_port}',
+        'workers': 2,  # 适合免费版资源限制
+        'timeout': 120,
+        'accesslog': '-',  # 输出到 stdout
+        'errorlog': '-',
+    }
+    FlaskApplication(app, options).run()
 
 # 主函数
 def main():
-    webhook_port = int(os.getenv("PORT", "10000"))  # Webhook 端口
+    webhook_port = int(os.getenv("PORT", 10000))
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Starting winpay_bot...")
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Webhook listening on port: {webhook_port}")
-    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] API listening on port: {5001}")
+    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] API listening on port: 5001")
 
     application = ApplicationBuilder().token(BOT_TOKEN).build()
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
     try:
+        # 初始化应用
         loop.run_until_complete(application.initialize())
         application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
         application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL | filters.ANIMATION | filters.VIDEO, handle_message))
@@ -626,22 +669,40 @@ def main():
         flask_thread = threading.Thread(target=run_flask, daemon=True)
         flask_thread.start()
 
-        # 启动 Webhook 并保持运行
+        # 设置 Webhook
         loop.run_until_complete(
-            application.run_webhook(
+            application.bot.set_webhook(
+                url=webhook_url,
+                secret_token=os.getenv("WEBHOOK_SECRET_TOKEN", None)
+            )
+        )
+        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Webhook 已设置，正在启动服务器...")
+
+        # 启动应用
+        loop.run_until_complete(
+            application.start()
+        )
+        loop.run_until_complete(
+            application.updater.start_webhook(
                 listen="0.0.0.0",
                 port=webhook_port,
                 url_path=f"/{BOT_TOKEN}",
                 webhook_url=webhook_url,
-                secret_token=os.getenv("WEBHOOK_SECRET_TOKEN", None)  # 可选：添加 Webhook 安全令牌
+                secret_token=os.getenv("WEBHOOK_SECRET_TOKEN", None)
             )
         )
+        loop.run_forever()  # 保持事件循环运行
     except Exception as e:
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Webhook 错误: {e}")
-        raise  # 抛出异常以便 Render 日志捕获
+        raise
     finally:
         if not loop.is_closed():
-            loop.run_until_complete(application.shutdown())
+            try:
+                loop.run_until_complete(application.stop())
+                loop.run_until_complete(application.updater.stop())
+                loop.run_until_complete(application.shutdown())
+            except Exception as e:
+                print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 关闭错误: {e}")
             loop.close()
 
 if __name__ == '__main__':
