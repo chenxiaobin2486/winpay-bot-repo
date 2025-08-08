@@ -1,6 +1,6 @@
-# 导入必要的模块
+from flask import Flask, jsonify
 import asyncio
-from telegram.ext import Application, MessageHandler, filters, ApplicationBuilder
+from telegram.ext import Application, ApplicationBuilder, MessageHandler, filters
 import telegram.ext
 import re
 import os
@@ -8,37 +8,36 @@ from datetime import datetime, timezone, timedelta
 import pytz
 import random
 import string
+import threading
 
-# 定义 Bot Token（从环境变量获取）
-BOT_TOKEN = os.getenv("BOT_TOKEN", "7908773608:AAFFqLmGkJ9zbsuymQTFzJxy5IyeN1E9M-U")
+# 初始化 Flask 应用
+app = Flask(__name__)
 
 # 定义全局变量
-initial_admin_username = "WinPay06_Thomason"  # 初始最高权限管理员用户名
-operating_groups = {}  # {chat_id: {username: True}}，包括群组和私聊 ("private") 的操作员列表
-transactions = {}  # {chat_id: [transaction_list]}，每个群组独立记账
-user_history = {}  # {chat_id: {user_id: {"username": str, "first_name": str}}}，记录成员历史
-exchange_rates = {}  # {chat_id: {"deposit": float, "withdraw": float, "deposit_fee": float, "withdraw_fee": float}}，每个群组独立汇率和费率
-address_verify_count = {}  # {chat_id: {"count": int, "last_user": str}}，记录地址验证次数和上次发送人
-is_accounting_enabled = {}  # {chat_id: bool}，控制记账状态，默认为 True
-team_groups = {}  # {队名: [群ID列表]}，保留为未来群发功能
-scheduled_tasks = {}  # {任务ID: {"team": 队名, "template": 模板名, "time": 任务时间}}，保留为空
+BOT_TOKEN = os.getenv("BOT_TOKEN", "7908773608:AAFFqLmGkJ9zbsuymQTFzJxy5IyeN1E9M-U")
+initial_admin_username = "WinPay06_Thomason"
+operating_groups = {}  # {chat_id: {username: True}}
+transactions = {}  # {chat_id: [transaction_list]}
+user_history = {}  # {chat_id: {user_id: {"username": str, "first_name": str}}}
+exchange_rates = {}  # {chat_id: {"deposit": float, "withdraw": float, "deposit_fee": float, "withdraw_fee": float}}
+address_verify_count = {}  # {chat_id: {"count": int, "last_user": str}}
+is_accounting_enabled = {}  # {chat_id: bool}
+team_groups = {}  # {队名: [群ID列表]}
+scheduled_tasks = {}  # {任务ID: {"team": 队名, "template": 模板名, "time": 任务时间}}
 last_file_id = {}  # {chat_id: 文件ID}
-last_file_message = {}  # {chat_id: {"file_id": str, "caption": str or None}}，记录最近文件消息
-templates = {}  # {模板名: {"message": 广告文, "file_id": 文件ID}}，保留为未来群发功能
+last_file_message = {}  # {chat_id: {"file_id": str, "caption": str or None}}
+templates = {}  # {模板名: {"message": 广告文, "file_id": 文件ID}}
 
 # 账单处理函数
 async def handle_bill(update, context):
     chat_id = str(update.message.chat_id)
     if chat_id not in transactions:
         transactions[chat_id] = []
-    # 限制显示最近6笔交易
     recent_transactions = transactions[chat_id][-6:] if len(transactions[chat_id]) >= 6 else transactions[chat_id]
-    # 计算总笔数，基于所有交易
     deposit_count = sum(1 for t in transactions[chat_id] if t.startswith("入款"))
     withdraw_count = sum(1 for t in transactions[chat_id] if t.startswith("下发"))
     bill = "当前账单\n"
 
-    # 当前汇率和费率，仅用于账单底部显示
     exchange_rate_deposit = exchange_rates.get(chat_id, {"deposit": 1.0})["deposit"]
     deposit_fee_rate = exchange_rates.get(chat_id, {"deposit_fee": 0.0})["deposit_fee"]
     exchange_rate_withdraw = exchange_rates.get(chat_id, {"withdraw": 1.0})["withdraw"]
@@ -49,13 +48,12 @@ async def handle_bill(update, context):
         for t in reversed([t for t in recent_transactions if t.startswith("入款")]):
             parts = t.split(" -> ")
             timestamp = parts[0].split()[2]
-            if len(parts) == 1:  # 无 ->，直接金额
+            if len(parts) == 1:
                 amount = float(parts[0].split()[1].rstrip('u'))
                 bill += f"{timestamp}  {format_amount(amount)}u\n"
-            else:  # 有 ->，包含调整金额和历史汇率/费率
+            else:
                 amount = float(parts[0].split()[1].rstrip('u'))
                 adjusted = float(parts[1].split()[0].rstrip('u'))
-                # 解析交易记录中的历史汇率和费率
                 rate_info = parts[1].split("[rate=")[1].rstrip("]").split(", fee=")
                 historical_rate = float(rate_info[0])
                 historical_fee = float(rate_info[1])
@@ -69,13 +67,12 @@ async def handle_bill(update, context):
         for t in reversed([t for t in recent_transactions if t.startswith("下发")]):
             parts = t.split(" -> ")
             timestamp = parts[0].split()[2]
-            if len(parts) == 1:  # 无 ->，直接金额
+            if len(parts) == 1:
                 amount = float(parts[0].split()[1].rstrip('u'))
                 bill += f"{timestamp}  {format_amount(amount)}u\n"
-            else:  # 有 ->，包含调整金额和历史汇率/费率
+            else:
                 amount = float(parts[0].split()[1].rstrip('u'))
                 adjusted = float(parts[1].split()[0].rstrip('u'))
-                # 解析交易记录中的历史汇率和费率
                 rate_info = parts[1].split("[rate=")[1].rstrip("]").split(", fee=")
                 historical_rate = float(rate_info[0])
                 historical_fee = float(rate_info[1])
@@ -102,7 +99,6 @@ async def handle_bill(update, context):
             bill += f"总出款：{format_amount(total_withdraw)}  |  {format_amount(total_withdraw_adjusted)}u\n"
         bill += f"总余额：{format_amount(balance)}u"
 
-    # 添加内联 Web 按钮
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     keyboard = [[InlineKeyboardButton("查看完整账单", url=f"https://bill-web-app.onrender.com/Telegram/BillReport?group_id={chat_id}")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -138,7 +134,6 @@ async def welcome_new_member(update: telegram.Update, context: telegram.ext.Cont
             user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
             await context.bot.send_message(chat_id=chat_id, text=f"欢迎 {nickname} 来到本群，入金叫卡找winpay，是你最好的选择")
 
-            # 检测昵称/用户名不一致
             if user_id in user_history[chat_id]:
                 old_data = user_history[chat_id][user_id].copy()
                 old_username = old_data["username"]
@@ -151,7 +146,8 @@ async def welcome_new_member(update: telegram.Update, context: telegram.ext.Cont
                     warning = f"⚠️防骗提示⚠️ (@{username}) 的昵称不一致\n之前昵称：{old_first_name}\n现在昵称：{first_name}\n修改时间：{timestamp}\n请注意查证‼️"
                     await context.bot.send_message(chat_id=chat_id, text=warning)
                     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
-                    # 处理所有消息
+
+# 处理所有消息
 async def handle_message(update, context):
     global operating_groups, transactions, user_history, address_verify_count, is_accounting_enabled, exchange_rates, team_groups, scheduled_tasks, last_file_id, last_file_message, templates
     message_text = update.message.text.strip() if update.message.text else ""
@@ -179,7 +175,6 @@ async def handle_message(update, context):
     if chat_id not in exchange_rates:
         exchange_rates[chat_id] = {"deposit": 1.0, "withdraw": 1.0, "deposit_fee": 0.0, "withdraw_fee": 0.0}
 
-    # 首次互动初始化老成员并检测不一致
     if user_id not in user_history[chat_id]:
         user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 初始化用户 {user_id} 记录: username={username}, first_name={first_name}")
@@ -198,7 +193,6 @@ async def handle_message(update, context):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
     user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
 
-    # 私聊中处理文件消息
     if update.message.chat.type == "private" and (update.message.animation or update.message.document or update.message.video or update.message.photo):
         file_id = None
         file_type = None
@@ -225,7 +219,6 @@ async def handle_message(update, context):
             await context.bot.send_message(chat_id=chat_id, text="无法识别文件，请确保发送的是动图、视频或图片文件")
         return
 
-    # 仅处理指令消息
     if not any(message_text.startswith(cmd) or message_text == cmd for cmd in [
         "开始", "停止记账", "恢复记账", "说明", "入款", "+", "下发", "设置操作员", "删除操作员",
         "设置入款汇率", "设置入款费率", "设置下发汇率", "设置下发费率", "账单", "+0", "删除",
@@ -233,7 +226,6 @@ async def handle_message(update, context):
     ]):
         return
 
-    # 权限检查
     is_operator = username and (username in operating_groups.get(chat_id, {}) or 
                               (update.message.chat.type == "private" and username in operating_groups.get("private", {})))
     if not is_operator and message_text not in ["账单", "+0", "说明"]:
@@ -241,7 +233,6 @@ async def handle_message(update, context):
             await context.bot.send_message(chat_id=chat_id, text=f"@{username}非操作员，请联系管理员设置权限")
         return
 
-    # 编队列表指令
     if message_text == "编队列表" and update.message.chat.type == "private":
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '编队列表' 指令")
         if username and (username in operating_groups.get("private", {}) or username == initial_admin_username):
@@ -255,24 +246,23 @@ async def handle_message(update, context):
             await context.bot.send_message(chat_id=chat_id, text=f"仅操作员可查看编队列表，请联系管理员设置权限")
         return
 
-    # 记账功能
     if message_text == "开始":
         if is_operator:
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '开始' 指令")
-            transactions[chat_id].clear()  # 清空当前账单，重新开始记账
-            is_accounting_enabled[chat_id] = True  # 确保启用记账
+            transactions[chat_id].clear()
+            is_accounting_enabled[chat_id] = True
             await context.bot.send_message(chat_id=chat_id, text="欢迎使用 winpay小秘书，入金叫卡找winpay，是你最好的选择")
 
     elif message_text == "停止记账":
         if is_operator:
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '停止记账' 指令")
-            is_accounting_enabled[chat_id] = False  # 暂停记账功能
+            is_accounting_enabled[chat_id] = False
             await context.bot.send_message(chat_id=chat_id, text="已暂停记账功能")
 
     elif message_text == "恢复记账":
         if is_operator:
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '恢复记账' 指令")
-            is_accounting_enabled[chat_id] = True  # 恢复记账功能
+            is_accounting_enabled[chat_id] = True
             await context.bot.send_message(chat_id=chat_id, text="记账功能已恢复")
 
     elif message_text == "说明":
@@ -485,9 +475,7 @@ async def handle_message(update, context):
                 f"上次发送人：{last_user}"
             )
 
-    # 群发功能（仅私聊有效，仅保留非调度指令）
     if update.message.chat.type == "private":
-        # 显示群发说明
         if message_text == "群发说明":
             help_text = """
 ### 群发指令说明
@@ -531,7 +519,6 @@ async def handle_message(update, context):
             """
             await context.bot.send_message(chat_id=chat_id, text=help_text)
 
-        # 编队指令
         if message_text.startswith("编队 "):
             parts = message_text.split(" ", 2)
             if len(parts) == 3 and parts[1] and parts[2]:
@@ -556,7 +543,6 @@ async def handle_message(update, context):
                 await context.bot.send_message(chat_id=chat_id, text="使用格式：编队 队名 群ID,群ID")
             return
 
-        # 删除编队群组
         if message_text.startswith("删除 "):
             parts = message_text.split(" ", 2)
             if len(parts) == 3 and parts[1] and parts[2]:
@@ -585,7 +571,6 @@ async def handle_message(update, context):
                 await context.bot.send_message(chat_id=chat_id, text="使用格式：删除 队名 群ID,群ID")
             return
 
-        # 编辑模板
         if message_text.startswith("编辑 "):
             parts = message_text.split(" ", 2)
             if len(parts) == 3 and parts[1] and parts[2]:
@@ -603,24 +588,25 @@ async def handle_message(update, context):
             else:
                 await context.bot.send_message(chat_id=chat_id, text="使用格式：编辑 模板名 广告文")
 
-        # 禁用任务和任务列表指令
         if message_text.startswith("任务 ") or message_text == "任务列表":
             await context.bot.send_message(chat_id=chat_id, text="群发任务功能当前不可用，请升级到 SuperGrok 订阅计划以启用，详情请访问 https://x.ai/grok")
 
+# 运行 Flask 的函数
+def run_flask():
+    flask_port = 5001  # API 端口
+    app.run(host='0.0.0.0', port=flask_port)
+
 # 主函数
 def main():
-    port = int(os.getenv("PORT", "10000"))
-    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Listening on port: {port}")
+    webhook_port = int(os.getenv("PORT", "10000"))  # Webhook 端口
+    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Webhook listening on port: {webhook_port}")
+    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] API listening on port: {5001}")
 
-    # 使用 ApplicationBuilder 构建应用
     application = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    # 异步初始化应用
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.run_until_complete(application.initialize())
 
-    # 添加消息处理器
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
     application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL | filters.ANIMATION | filters.VIDEO, handle_message))
 
@@ -631,18 +617,21 @@ def main():
         webhook_url = f"{external_url}/{BOT_TOKEN}"
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 设置 Webhook URL: {webhook_url}")
     try:
-        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 尝试启动 Webhook...")
-        # 运行 Webhook，确保监听 0.0.0.0
+        # 启动 Flask 在独立线程
+        flask_thread = threading.Thread(target=run_flask, daemon=True)
+        flask_thread.start()
+
+        # 启动 Webhook
         loop.run_until_complete(
             application.run_webhook(
                 listen="0.0.0.0",
-                port=port,
+                port=webhook_port,
                 url_path=f"/{BOT_TOKEN}",
                 webhook_url=webhook_url
             )
         )
     except Exception as e:
-        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Webhook 设置失败: {e}")
+        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 错误: {e}")
     finally:
         loop.run_until_complete(application.shutdown())
         loop.close()
