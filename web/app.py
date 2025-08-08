@@ -12,7 +12,6 @@ transactions = {
 @app.route('/Telegram/BillReport')
 def bill_report():
     group_id = request.args.get('group_id')
-    
     # 如果指定 group_id，则显示该群组的账单；否则显示所有群组
     if group_id and group_id in transactions:
         bills = transactions[group_id]
