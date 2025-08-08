@@ -420,6 +420,7 @@ async def handle_message(update, context):
         if is_operator or message_text in ["账单", "+0"]:
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '账单' 或 '+0' 指令")
             await handle_bill(update, context)
+            
         elif message_text == "删除":
         if is_operator and is_accounting_enabled.get(chat_id, True):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '删除' 指令")
