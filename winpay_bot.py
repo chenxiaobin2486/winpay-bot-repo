@@ -546,7 +546,7 @@ async def handle_message(update, context):
                                 raise ValueError(f"无效群ID: {gid}")
                         team_groups[team_name] = list(set(team_groups.get(team_name, []) + group_ids))
                         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 编队输入: 队名={team_name}, 群ID={group_ids}")
-                                                await context.bot.send_message(chat_id=chat_id, text=f"编队已更新: {team_name}，包含群组: {', '.join(group_ids)}")
+                        await context.bot.send_message(chat_id=chat_id, text=f"编队已更新: {team_name}，包含群组: {', '.join(group_ids)}")
                     except ValueError as e:
                         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 编队解析失败: {e}")
                         await context.bot.send_message(chat_id=chat_id, text=f"任务目标有误请检查: {e}")
