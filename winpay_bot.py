@@ -6,8 +6,6 @@ import re
 import os
 from datetime import datetime, timezone, timedelta
 import pytz
-import random
-import string
 import threading
 
 # 初始化 Flask 应用
@@ -634,14 +632,17 @@ def main():
                 listen="0.0.0.0",
                 port=webhook_port,
                 url_path=f"/{BOT_TOKEN}",
-                webhook_url=webhook_url
+                webhook_url=webhook_url,
+                secret_token=os.getenv("WEBHOOK_SECRET_TOKEN", None)  # 可选：添加 Webhook 安全令牌
             )
         )
     except Exception as e:
-        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 错误: {e}")
+        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Webhook 错误: {e}")
+        raise  # 抛出异常以便 Render 日志捕获
     finally:
-        loop.run_until_complete(application.shutdown())
-        loop.close()
+        if not loop.is_closed():
+            loop.run_until_complete(application.shutdown())
+            loop.close()
 
 if __name__ == '__main__':
-    main()  # 直接运行 main
+    main()
