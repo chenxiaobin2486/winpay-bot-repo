@@ -9,26 +9,35 @@ from datetime import datetime, timezone, timedelta
 import pytz
 import threading
 
-# 初始化 Flask 应用
 app = Flask(__name__)
-CORS(app)  # 启用 CORS，支持跨域请求
+CORS(app)
 
-# 定义全局变量
 BOT_TOKEN = os.getenv("BOT_TOKEN", "7908773608:AAFFqLmGkJ9zbsuymQTFzJxy5IyeN1E9M-U")
 initial_admin_username = "WinPay06_Thomason"
-operating_groups = {}  # {chat_id: {username: True}}
-transactions = {}  # {chat_id: [transaction_list]}
-user_history = {}  # {chat_id: {user_id: {"username": str, "first_name": str}}}
-exchange_rates = {}  # {chat_id: {"deposit": float, "withdraw": float, "deposit_fee": float, "withdraw_fee": float}}
-address_verify_count = {}  # {chat_id: {"count": int, "last_user": str}}
-is_accounting_enabled = {}  # {chat_id: bool}
-team_groups = {}  # {队名: [群ID列表]}
-scheduled_tasks = {}  # {任务ID: {"team": 队名, "template": 模板名, "time": 任务时间}}
-last_file_id = {}  # {chat_id: 文件ID}
-last_file_message = {}  # {chat_id: {"file_id": str, "caption": str or None}}
-templates = {}  # {模板名: {"message": 广告文, "file_id": 文件ID}}
+operating_groups = {}
+transactions = {}
+user_history = {}
+exchange_rates = {}
+address_verify_count = {}
+is_accounting_enabled = {}
+team_groups = {}
+scheduled_tasks = {}
+last_file_id = {}
+last_file_message = {}
+templates = {}
 
-# 账单处理函数
+def format_amount(amount):
+    formatted = f"{amount:.2f}"
+    if formatted.endswith(".00"):
+        return str(int(amount))
+    return formatted
+
+def format_exchange_rate(rate):
+    formatted = f"{rate:.3f}"
+    if formatted.endswith("0"):
+        return f"{rate:.2f}"
+    return formatted
+
 async def handle_bill(update, context):
     chat_id = str(update.message.chat_id)
     if chat_id not in transactions:
@@ -47,7 +56,7 @@ async def handle_bill(update, context):
         bill += f"入款（{deposit_count}笔）\n"
         for t in reversed([t for t in recent_transactions if t.startswith("入款")]):
             parts = t.split(" -> ")
-            timestamp = parts[0].split()[2]
+            timestamp = parts[0].split()[2] # 取 HH:MM
             if len(parts) == 1:
                 amount = float(parts[0].split()[1].rstrip('u'))
                 bill += f"{timestamp}  {format_amount(amount)}u\n"
@@ -56,7 +65,7 @@ async def handle_bill(update, context):
                 adjusted = float(parts[1].split()[0].rstrip('u'))
                 rate_info = parts[1].split("[rate=")[1].rstrip("]").split(", fee=")
                 historical_rate = float(rate_info[0])
-                historical_fee = float(rate_info[1])
+                historical_fee = float(rate_info[1].split(",")[0]) # 忽略 operator
                 effective_rate = 1 - historical_fee
                 bill += f"{timestamp}  {format_amount(amount)}*{effective_rate:.2f}/{format_exchange_rate(historical_rate)}={format_amount(adjusted)}u\n"
 
@@ -75,7 +84,7 @@ async def handle_bill(update, context):
                 adjusted = float(parts[1].split()[0].rstrip('u'))
                 rate_info = parts[1].split("[rate=")[1].rstrip("]").split(", fee=")
                 historical_rate = float(rate_info[0])
-                historical_fee = float(rate_info[1])
+                historical_fee = float(rate_info[1].split(",")[0])
                 effective_rate = 1 + historical_fee
                 bill += f"{timestamp}  {format_amount(amount)}*{effective_rate:.2f}/{format_exchange_rate(historical_rate)}={format_amount(adjusted)}u\n"
 
@@ -104,21 +113,6 @@ async def handle_bill(update, context):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await context.bot.send_message(chat_id=chat_id, text=bill if transactions[chat_id] else "无交易记录", reply_markup=reply_markup)
 
-# 格式化金额函数
-def format_amount(amount):
-    formatted = f"{amount:.2f}"
-    if formatted.endswith(".00"):
-        return str(int(amount))
-    return formatted
-
-# 格式化汇率函数
-def format_exchange_rate(rate):
-    formatted = f"{rate:.3f}"
-    if formatted.endswith("0"):
-        return f"{rate:.2f}"
-    return formatted
-
-# 欢迎新成员
 async def welcome_new_member(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.message.chat_id)
     if chat_id not in user_history:
@@ -147,7 +141,6 @@ async def welcome_new_member(update: telegram.Update, context: telegram.ext.Cont
                     await context.bot.send_message(chat_id=chat_id, text=warning)
                     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
 
-# 处理所有消息
 async def handle_message(update, context):
     global operating_groups, transactions, user_history, address_verify_count, is_accounting_enabled, exchange_rates, team_groups, scheduled_tasks, last_file_id, last_file_message, templates
     message_text = update.message.text.strip() if update.message.text else ""
@@ -155,7 +148,7 @@ async def handle_message(update, context):
     user_id = str(update.message.from_user.id)
     username = update.message.from_user.username
     first_name = update.message.from_user.first_name.strip() if update.message.from_user.first_name else None
-    operator_name = first_name or "未知用户"
+    operator_name = first_name or username or "未知用户"
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 收到消息: '{message_text}' 从用户 {user_id}, username: {username}, chat_id: {chat_id}")
 
     if chat_id not in operating_groups:
@@ -191,7 +184,6 @@ async def handle_message(update, context):
             warning = f"⚠️防骗提示⚠️ (@{username}) 的昵称不一致\n之前昵称：{old_first_name}\n现在昵称：{first_name}\n修改时间：{timestamp}\n请注意查证‼️"
             await context.bot.send_message(chat_id=chat_id, text=warning)
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
-    user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
 
     if update.message.chat.type == "private" and (update.message.animation or update.message.document or update.message.video or update.message.photo):
         file_id = None
@@ -294,15 +286,16 @@ async def handle_message(update, context):
                 beijing_tz = pytz.timezone("Asia/Shanghai")
                 utc_time = update.message.date.replace(tzinfo=timezone.utc)
                 timestamp = utc_time.astimezone(beijing_tz).strftime("%H:%M")
+                date = utc_time.astimezone(beijing_tz).strftime("%Y-%m-%d")
                 exchange_rate_deposit = exchange_rates[chat_id]["deposit"]
                 deposit_fee_rate = exchange_rates[chat_id]["deposit_fee"]
                 if amount_str.lower().endswith('u'):
                     amount = float(amount_str.rstrip('uU'))
-                    transaction = f"入款 {format_amount(amount)}u {timestamp}"
+                    transaction = f"入款 {format_amount(amount)}u {timestamp} {date} [operator={operator_name}]"
                 else:
                     amount = float(amount_str)
                     adjusted_amount = amount * (1 - deposit_fee_rate) / exchange_rate_deposit
-                    transaction = f"入款 {format_amount(amount)} {timestamp} -> {format_amount(adjusted_amount)}u [rate={exchange_rate_deposit}, fee={deposit_fee_rate}]"
+                    transaction = f"入款 {format_amount(amount)} {timestamp} {date} -> {format_amount(adjusted_amount)}u [rate={exchange_rate_deposit}, fee={deposit_fee_rate}, operator={operator_name}]"
                 transactions[chat_id].append(transaction)
                 await handle_bill(update, context)
             except ValueError:
@@ -316,15 +309,16 @@ async def handle_message(update, context):
                 beijing_tz = pytz.timezone("Asia/Shanghai")
                 utc_time = update.message.date.replace(tzinfo=timezone.utc)
                 timestamp = utc_time.astimezone(beijing_tz).strftime("%H:%M")
+                date = utc_time.astimezone(beijing_tz).strftime("%Y-%m-%d")
                 exchange_rate_withdraw = exchange_rates[chat_id]["withdraw"]
                 withdraw_fee_rate = exchange_rates[chat_id]["withdraw_fee"]
                 if amount_str.lower().endswith('u'):
                     amount = float(amount_str.rstrip('uU'))
-                    transaction = f"下发 {format_amount(amount)}u {timestamp}"
+                    transaction = f"下发 {format_amount(amount)}u {timestamp} {date} [operator={operator_name}]"
                 else:
                     amount = float(amount_str)
                     adjusted_amount = amount * (1 + withdraw_fee_rate) / exchange_rate_withdraw
-                    transaction = f"下发 {format_amount(amount)} {timestamp} -> {format_amount(adjusted_amount)}u [rate={exchange_rate_withdraw}, fee={withdraw_fee_rate}]"
+                    transaction = f"下发 {format_amount(amount)} {timestamp} {date} -> {format_amount(adjusted_amount)}u [rate={exchange_rate_withdraw}, fee={withdraw_fee_rate}, operator={operator_name}]"
                 transactions[chat_id].append(transaction)
                 await handle_bill(update, context)
             except ValueError:
@@ -591,18 +585,22 @@ async def handle_message(update, context):
         if message_text.startswith("任务 ") or message_text == "任务列表":
             await context.bot.send_message(chat_id=chat_id, text="群发任务功能当前不可用，请升级到 SuperGrok 订阅计划以启用，详情请访问 https://x.ai/grok")
 
-# 交易数据 API（添加分页和日志）
 @app.route('/get_transactions/<chat_id>')
 def get_transactions_api(chat_id):
     try:
         page = int(request.args.get('page', 1))
         per_page = int(request.args.get('per_page', 50))
+        date = request.args.get('date')
         transactions_list = transactions.get(chat_id, [])
+        
+        if date:
+            transactions_list = [t for t in transactions_list if date in t]
+        
         total = len(transactions_list)
         start = (page - 1) * per_page
         end = start + per_page
         paginated_transactions = transactions_list[start:end]
-        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] API 请求: /get_transactions/{chat_id}, page={page}, per_page={per_page}, 返回 {len(paginated_transactions)} 条记录")
+        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] API 请求: /get_transactions/{chat_id}, page={page}, per_page={per_page}, date={date or '无'}, 返回 {len(paginated_transactions)} 条记录")
         return jsonify({
             'transactions': paginated_transactions,
             'total': total,
@@ -613,7 +611,6 @@ def get_transactions_api(chat_id):
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] API 错误: {e}")
         return jsonify({'error': str(e)}), 500
 
-# 运行 Flask 的函数（使用 gunicorn）
 def run_flask():
     flask_port = int(os.getenv("FLASK_PORT", 5001))
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Starting Flask with gunicorn on port {flask_port}")
@@ -627,83 +624,36 @@ def run_flask():
 
         def load_config(self):
             for key, value in self.options.items():
-                self.cfg.set(key.lower(), value)
+                self.cfg.set(key, value)
 
         def load(self):
             return self.application
 
     options = {
         'bind': f'0.0.0.0:{flask_port}',
-        'workers': 2,  # 适合免费版资源限制
+        'workers': 2,
         'timeout': 120,
-        'accesslog': '-',  # 输出到 stdout
+        'accesslog': '-',
         'errorlog': '-',
     }
     FlaskApplication(app, options).run()
 
-# 主函数
-def main():
-    webhook_port = int(os.getenv("PORT", 10000))
-    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Starting winpay_bot...")
-    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Webhook listening on port: {webhook_port}")
-    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] API listening on port: 5001")
-
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
+def run_bot():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-
-    try:
-        # 初始化应用
-        loop.run_until_complete(application.initialize())
-        application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
-        application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.Document.ALL | filters.ANIMATION | filters.VIDEO, handle_message))
-
-        external_url = os.getenv("RENDER_EXTERNAL_URL", "winpay-bot-repo.onrender.com").strip()
-        if not external_url.startswith("http"):
-            webhook_url = f"https://{external_url}/{BOT_TOKEN}"
-        else:
-            webhook_url = f"{external_url}/{BOT_TOKEN}"
-        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 设置 Webhook URL: {webhook_url}")
-
-        # 启动 Flask 在独立线程
-        flask_thread = threading.Thread(target=run_flask, daemon=True)
-        flask_thread.start()
-
-        # 设置 Webhook
-        loop.run_until_complete(
-            application.bot.set_webhook(
-                url=webhook_url,
-                secret_token=os.getenv("WEBHOOK_SECRET_TOKEN", None)
-            )
-        )
-        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Webhook 已设置，正在启动服务器...")
-
-        # 启动应用
-        loop.run_until_complete(
-            application.start()
-        )
-        loop.run_until_complete(
-            application.updater.start_webhook(
-                listen="0.0.0.0",
-                port=webhook_port,
-                url_path=f"/{BOT_TOKEN}",
-                webhook_url=webhook_url,
-                secret_token=os.getenv("WEBHOOK_SECRET_TOKEN", None)
-            )
-        )
-        loop.run_forever()  # 保持事件循环运行
-    except Exception as e:
-        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Webhook 错误: {e}")
-        raise
-    finally:
-        if not loop.is_closed():
-            try:
-                loop.run_until_complete(application.stop())
-                loop.run_until_complete(application.updater.stop())
-                loop.run_until_complete(application.shutdown())
-            except Exception as e:
-                print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 关闭错误: {e}")
-            loop.close()
+    app_bot = ApplicationBuilder().token(BOT_TOKEN).build()
+    app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app_bot.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
+    app_bot.run_webhook(
+        listen="0.0.0.0",
+        port=int(os.getenv("PORT", 10000)),
+        url_path=f"/{BOT_TOKEN}",
+        webhook_url=f"{os.getenv('RENDER_EXTERNAL_URL')}/{BOT_TOKEN}"
+    )
+    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Bot webhook started on port {os.getenv('PORT', 10000)}")
+    loop.run_forever()
 
 if __name__ == '__main__':
-    main()
+    bot_thread = threading.Thread(target=run_bot)
+    bot_thread.start()
+    run_flask()
