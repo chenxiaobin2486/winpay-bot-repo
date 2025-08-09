@@ -1,0 +1,90 @@
+/* 表格样式 */
+.bill-table {
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    background: #fff;
+    margin: 20px 0;
+}
+.bill-table th, .bill-table td {
+    padding: 12px;
+    font-size: 16px;
+    font-family: 'Roboto', sans-serif;
+    text-align: center;
+}
+.bill-table th {
+    background: #007bff;
+    color: white;
+    font-weight: 600;
+}
+.bill-table tr:hover {
+    background: #f1f5f9;
+}
+.text-success { color: #28a745 !important; } /* 入款绿色 */
+.text-danger { color: #dc3545 !important; } /* 下发红色 */
+.operator-col {
+    min-width: 120px;
+    white-space: normal;
+    word-break: break-all;
+}
+
+/* 日期选择器 */
+.date-picker {
+    text-align: center;
+    margin: 10px 0;
+}
+.date-picker input {
+    padding: 8px;
+    font-size: 16px;
+    border: 1px solid #007bff;
+    border-radius: 4px;
+    font-family: 'Roboto', sans-serif;
+}
+
+/* 加载动画 */
+.spinner {
+    display: flex;
+    justify-content: center;
+    margin: 20px;
+}
+.spinner::after {
+    content: '';
+    width: 24px;
+    height: 24px;
+    border: 3px solid #007bff;
+    border-top: 3px solid transparent;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* 错误提示 */
+.error {
+    color: #dc3545;
+    text-align: center;
+    margin: 20px;
+    font-size: 18px;
+    font-weight: 500;
+}
+
+/* 标题 */
+h1 {
+    font-size: 24px;
+    color: #333;
+    text-align: center;
+    margin: 20px 0;
+    font-family: 'Roboto', sans-serif;
+}
+
+/* 响应式 */
+@media (max-width: 576px) {
+    .bill-table th, .bill-table td {
+        font-size: 14px;
+        padding: 8px;
+    }
+    .operator-col { min-width: 80px; }
+    .date-picker input { font-size: 14px; padding: 6px; }
+    h1 { font-size: 20px; }
+}
