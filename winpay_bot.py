@@ -56,7 +56,7 @@ async def handle_bill(update, context):
         bill += f"入款（{deposit_count}笔）\n"
         for t in reversed([t for t in recent_transactions if t.startswith("入款")]):
             parts = t.split(" -> ")
-            timestamp = parts[0].split()[2] # 取 HH:MM
+            timestamp = parts[0].split()[2]  # 取 HH:MM
             if len(parts) == 1:
                 amount = float(parts[0].split()[1].rstrip('u'))
                 bill += f"{timestamp}  {format_amount(amount)}u\n"
@@ -65,7 +65,7 @@ async def handle_bill(update, context):
                 adjusted = float(parts[1].split()[0].rstrip('u'))
                 rate_info = parts[1].split("[rate=")[1].rstrip("]").split(", fee=")
                 historical_rate = float(rate_info[0])
-                historical_fee = float(rate_info[1].split(",")[0]) # 忽略 operator
+                historical_fee = float(rate_info[1].split(",")[0])  # 忽略 operator
                 effective_rate = 1 - historical_fee
                 bill += f"{timestamp}  {format_amount(amount)}*{effective_rate:.2f}/{format_exchange_rate(historical_rate)}={format_amount(adjusted)}u\n"
 
@@ -654,6 +654,6 @@ def run_bot():
     loop.run_forever()
 
 if __name__ == '__main__':
-    bot_thread = threading.Thread(target=run_bot)
-    bot_thread.start()
-    run_flask()
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.start()
+    run_bot()
