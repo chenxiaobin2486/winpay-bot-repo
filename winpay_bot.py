@@ -126,18 +126,18 @@ async def welcome_new_member(update: telegram.Update, context: telegram.ext.Cont
             timestamp = datetime.now(pytz.timezone("Asia/Bangkok")).strftime("%Y年%m月%d日 %H:%M")
 
             user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
-            await context.bot.send_message(chat_id=chat_id, text=f"欢迎 {nickname} 来到本群，入金叫卡找winpay，是你最好的选择")
+            await context.bot.send_message(chat_id=chat_id, text=f"热烈欢迎 {nickname} 来到本群，入金叫卡找聚元，光速到账似火箭")
 
             if user_id in user_history[chat_id]:
                 old_data = user_history[chat_id][user_id].copy()
                 old_username = old_data["username"]
                 old_first_name = old_data["first_name"]
                 if username and username != old_username and first_name == old_first_name:
-                    warning = f"⚠️防骗提示⚠️ ({first_name}) 的用户名不一致\n之前用户名：@{old_username}\n现在用户名：@{username}\n修改时间：{timestamp}\n请注意查证‼️"
+                    warning = f"⚠️警告提示⚠️ ({first_name}) 的用户名不一致\n之前用户名：@{old_username}\n现在用户名：@{username}\n修改时间：{timestamp}\n请注意查证‼️"
                     await context.bot.send_message(chat_id=chat_id, text=warning)
                     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 用户名变更警告: {first_name}, 之前 @{old_username}, 现在 @{username}")
                 elif first_name and first_name != old_first_name and username == old_username:
-                    warning = f"⚠️防骗提示⚠️ (@{username}) 的昵称不一致\n之前昵称：{old_first_name}\n现在昵称：{first_name}\n修改时间：{timestamp}\n请注意查证‼️"
+                    warning = f"⚠️警告提示⚠️ (@{username}) 的昵称不一致\n之前昵称：{old_first_name}\n现在昵称：{first_name}\n修改时间：{timestamp}\n请注意查证‼️"
                     await context.bot.send_message(chat_id=chat_id, text=warning)
                     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
 
@@ -177,11 +177,11 @@ async def handle_message(update, context):
         old_first_name = old_data["first_name"]
         timestamp = datetime.now(pytz.timezone("Asia/Bangkok")).strftime("%Y年%m月%d日 %H:%M")
         if username and username != old_username and first_name == old_first_name:
-            warning = f"⚠️防骗提示⚠️ ({first_name}) 的用户名不一致\n之前用户名：@{old_username}\n现在用户名：@{username}\n修改时间：{timestamp}\n请注意查证‼️"
+            warning = f"⚠️警告提示⚠️ ({first_name}) 的用户名不一致\n之前用户名：@{old_username}\n现在用户名：@{username}\n修改时间：{timestamp}\n请注意查证‼️"
             await context.bot.send_message(chat_id=chat_id, text=warning)
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 用户名变更警告: {first_name}, 之前 @{old_username}, 现在 @{username}")
         elif first_name and first_name != old_first_name and username == old_username:
-            warning = f"⚠️防骗提示⚠️ (@{username}) 的昵称不一致\n之前昵称：{old_first_name}\n现在昵称：{first_name}\n修改时间：{timestamp}\n请注意查证‼️"
+            warning = f"⚠️警告提示⚠️ (@{username}) 的昵称不一致\n之前昵称：{old_first_name}\n现在昵称：{first_name}\n修改时间：{timestamp}\n请注意查证‼️"
             await context.bot.send_message(chat_id=chat_id, text=warning)
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 昵称变更警告: @{username}, 之前 {old_first_name}, 现在 {first_name}")
 
@@ -243,7 +243,7 @@ async def handle_message(update, context):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '开始' 指令")
             transactions[chat_id].clear()
             is_accounting_enabled[chat_id] = True
-            await context.bot.send_message(chat_id=chat_id, text="欢迎使用 winpay小秘书，入金叫卡找winpay，是你最好的选择")
+            await context.bot.send_message(chat_id=chat_id, text="欢迎使用 聚元支付小助手，入金叫卡找聚元，光速到账似火箭")
 
     elif message_text == "停止记账":
         if is_operator:
