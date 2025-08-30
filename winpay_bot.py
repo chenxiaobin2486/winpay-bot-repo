@@ -27,16 +27,16 @@ last_file_message = {}
 templates = {}
 
 def format_amount(amount):
-    formatted = f"{amount:.2f}"
+    formatted = f"{float(amount):.2f}"  # 确保小数点后两位
     if formatted.endswith(".00"):
-        return str(int(amount))
+        return str(int(float(amount)))  # 若为整数，显示为整数
     return formatted
 
 def format_exchange_rate(rate):
-    formatted = f"{rate:.3f}"
+    formatted = f"{float(rate):.3f}"  # 保留三位小数
     if formatted.endswith("0"):
-        return f"{rate:.2f}"
-    return formatted
+        formatted = f"{float(rate):.2f}"  # 若最后一位为0，保留两位
+    return formatted.rstrip('0').rstrip('.')  # 移除末尾多余的0和.
 
 async def handle_bill(update, context):
     chat_id = str(update.message.chat_id)
@@ -57,17 +57,18 @@ async def handle_bill(update, context):
         for t in reversed([t for t in recent_transactions if t.startswith("入款")]):
             parts = t.split(" -> ")
             timestamp = parts[0].split()[2]  # 取 HH:MM
+            operator = parts[-1].split("operator=")[1].rstrip("]")  # 提取操作员昵称
             if len(parts) == 1:
                 amount = float(parts[0].split()[1].rstrip('u'))
-                bill += f"{timestamp}  {format_amount(amount)}u\n"
+                bill += f"{timestamp}  {format_amount(amount)}u     {operator}\n"
             else:
                 amount = float(parts[0].split()[1].rstrip('u'))
                 adjusted = float(parts[1].split()[0].rstrip('u'))
                 rate_info = parts[1].split("[rate=")[1].rstrip("]").split(", fee=")
                 historical_rate = float(rate_info[0])
-                historical_fee = float(rate_info[1].split(",")[0])  # 忽略 operator
+                historical_fee = float(rate_info[1].split(",")[0])
                 effective_rate = 1 - historical_fee
-                bill += f"{timestamp}  {format_amount(amount)}*{effective_rate:.2f}/{format_exchange_rate(historical_rate)}={format_amount(adjusted)}u\n"
+                bill += f"{timestamp}  {format_amount(amount)}*{format_amount(historical_fee*100)}%/{format_exchange_rate(historical_rate)}={format_amount(adjusted)}u     {operator}\n"
 
     if withdraw_count > 0:
         if deposit_count > 0:
@@ -76,9 +77,10 @@ async def handle_bill(update, context):
         for t in reversed([t for t in recent_transactions if t.startswith("下发")]):
             parts = t.split(" -> ")
             timestamp = parts[0].split()[2]
+            operator = parts[-1].split("operator=")[1].rstrip("]")  # 提取操作员昵称
             if len(parts) == 1:
                 amount = float(parts[0].split()[1].rstrip('u'))
-                bill += f"{timestamp}  {format_amount(amount)}u\n"
+                bill += f"{timestamp}  {format_amount(amount)}u     {operator}\n"
             else:
                 amount = float(parts[0].split()[1].rstrip('u'))
                 adjusted = float(parts[1].split()[0].rstrip('u'))
@@ -86,15 +88,15 @@ async def handle_bill(update, context):
                 historical_rate = float(rate_info[0])
                 historical_fee = float(rate_info[1].split(",")[0])
                 effective_rate = 1 + historical_fee
-                bill += f"{timestamp}  {format_amount(amount)}*{effective_rate:.2f}/{format_exchange_rate(historical_rate)}={format_amount(adjusted)}u\n"
+                bill += f"{timestamp}  {format_amount(amount)}*{format_amount(historical_fee*100)}%/{format_exchange_rate(historical_rate)}={format_amount(adjusted)}u     {operator}\n"
 
     if deposit_count > 0 or withdraw_count > 0:
         if deposit_count > 0 or withdraw_count > 0:
             bill += "\n"
         if deposit_count > 0:
-            bill += f"入款汇率：{format_exchange_rate(exchange_rate_deposit)}  |  费率：{int(deposit_fee_rate*100)}%\n"
+            bill += f"入款汇率：{format_exchange_rate(exchange_rate_deposit)}  |  费率：{format_amount(deposit_fee_rate*100)}%\n"
         if withdraw_count > 0:
-            bill += f"出款汇率：{format_exchange_rate(exchange_rate_withdraw)}  |  费率：{int(withdraw_fee_rate*100)}%\n"
+            bill += f"出款汇率：{format_exchange_rate(exchange_rate_withdraw)}  |  费率：{format_amount(withdraw_fee_rate*100)}%\n"
         if deposit_count > 0 or withdraw_count > 0:
             bill += "\n"
         total_deposit = sum(float(t.split()[1].rstrip('u')) for t in transactions[chat_id] if t.startswith("入款"))
@@ -144,7 +146,7 @@ async def welcome_new_member(update: telegram.Update, context: telegram.ext.Cont
 async def handle_message(update, context):
     global operating_groups, transactions, user_history, address_verify_count, is_accounting_enabled, exchange_rates, team_groups, scheduled_tasks, last_file_id, last_file_message, templates
     message_text = update.message.text.strip() if update.message.text else ""
-    chat_id = str(update.message.chat_id)
+    chat_id = str(update.message.shat_id)
     user_id = str(update.message.from_user.id)
     username = update.message.from_user.username
     first_name = update.message.from_user.first_name.strip() if update.message.from_user.first_name else None
@@ -211,6 +213,38 @@ async def handle_message(update, context):
             await context.bot.send_message(chat_id=chat_id, text="无法识别文件，请确保发送的是动图、视频或图片文件")
         return
 
+    # New arithmetic calculation logic for all users
+    arithmetic_pattern = r'^-?\d+(\.\d+)?([-+*/]-?\d+(\.\d+)?)+$'
+    if re.match(arithmetic_pattern, message_text) and re.match(r'^[0-9\.\-+*/]+$', message_text):
+        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到算术表达式: {message_text}")
+        try:
+            # Evaluate the expression safely
+            expression = message_text
+            # Replace ÷ with / for evaluation
+            expression = expression.replace('÷', '/')
+            # Evaluate the expression using eval (restricted to numbers and operators)
+            result = eval(expression, {"__builtins__": {}}, {})
+            # Format the result
+            if isinstance(result, (int, float)):
+                if isinstance(result, float) and result.is_integer():
+                    result = int(result)
+                else:
+                    result = round(result, 2)
+                response = f"{message_text}={result}"
+                print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 算术结果: {response}")
+                await context.bot.send_message(chat_id=chat_id, text=response)
+            else:
+                await context.bot.send_message(chat_id=chat_id, text="计算结果无效，请输入正确的算术表达式")
+            return
+        except ZeroDivisionError:
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 算术错误: 除数为零")
+            await context.bot.send_message(chat_id=chat_id, text="错误：除数不能为0")
+            return
+        except Exception as e:
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 算术计算错误: {e}")
+            await context.bot.send_message(chat_id=chat_id, text="请输入正确的算术表达式，例如：100+27 或 92000*0.92/1456")
+            return
+
     if not any(message_text.startswith(cmd) or message_text == cmd for cmd in [
         "开始", "停止记账", "恢复记账", "说明", "入款", "+", "下发", "设置操作员", "删除操作员",
         "设置入款汇率", "设置入款费率", "设置下发汇率", "设置下发费率", "账单", "+0", "删除",
@@ -243,7 +277,7 @@ async def handle_message(update, context):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '开始' 指令")
             transactions[chat_id].clear()
             is_accounting_enabled[chat_id] = True
-            await context.bot.send_message(chat_id=chat_id, text="欢迎使用 🌏聚元支付小助手，入金叫卡找聚元，光速到账似火箭")
+            await context.bot.send_message(chat_id=chat_id, text="欢迎使用聚元支付小助手，入金叫卡找聚元，光速到账似火箭")
 
     elif message_text == "停止记账":
         if is_operator:
@@ -372,9 +406,9 @@ async def handle_message(update, context):
             try:
                 rate = float(message_text.replace("设置入款费率", "").strip()) / 100
                 exchange_rates[chat_id]["deposit_fee"] = rate
-                await context.bot.send_message(chat_id=chat_id, text=f"设置成功入款费率 {int(rate*100)}%")
+                await context.bot.send_message(chat_id=chat_id, text=f"设置成功入款费率 {format_amount(rate*100)}%")
             except ValueError:
-                await context.bot.send_message(chat_id=chat_id, text="请输入正确费率，例如：设置入款费率8")
+                await context.bot.send_message(chat_id=chat_id, text="请输入正确费率，例如：设置入款费率4.5")
 
     elif message_text.startswith("设置下发汇率"):
         if is_operator and is_accounting_enabled.get(chat_id, True):
@@ -392,9 +426,9 @@ async def handle_message(update, context):
             try:
                 rate = float(message_text.replace("设置下发费率", "").strip()) / 100
                 exchange_rates[chat_id]["withdraw_fee"] = rate
-                await context.bot.send_message(chat_id=chat_id, text=f"设置成功下发费率 {int(rate*100)}%")
+                await context.bot.send_message(chat_id=chat_id, text=f"设置成功下发费率 {format_amount(rate*100)}%")
             except ValueError:
-                await context.bot.send_message(chat_id=chat_id, text="请输入正确费率，例如：设置下发费率8")
+                await context.bot.send_message(chat_id=chat_id, text="请输入正确费率，例如：设置下发费率4.5")
 
     elif message_text == "账单" or message_text == "+0":
         if is_operator or message_text in ["账单", "+0"]:
@@ -454,7 +488,7 @@ async def handle_message(update, context):
             private_op_list = ", ".join([f"@{op}" for op in operating_groups.get("private", {})]) if "private" in operating_groups else "无"
             await context.bot.send_message(chat_id=chat_id, text=f"当前群组操作员列表: {op_list if op_list else '无'}\n私聊操作员列表: {private_op_list}")
 
-    elif re.match(r'^[T][a-km-zA-HJ-NP-Z1-9]{33}$', message_text):
+    elif re.match(r'^[T][a-km-zA-HJ-NZ1-9]{33}$', message_text):
         if is_accounting_enabled.get(chat_id, True):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 TRX 地址验证")
             chat_id = str(update.message.chat_id)
