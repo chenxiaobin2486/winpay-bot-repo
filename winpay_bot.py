@@ -67,7 +67,7 @@ async def handle_bill(update, context):
                 historical_rate = float(rate_info[0])
                 historical_fee = float(rate_info[1].split(",")[0])
                 effective_rate = 1 - historical_fee
-                bill += f"{timestamp}  {format_amount(amount)} * (1-{format_amount(historical_fee)}) / {format_exchange_rate(historical_rate)} = {format_amount(adjusted)}u    {operator}\n"
+                bill += f"{timestamp}  {format_amount(amount)} * {format_amount(effective_rate)} / {format_exchange_rate(historical_rate)} = {format_amount(adjusted)}u    {operator}\n"
 
     if withdraw_count > 0:
         if deposit_count > 0:
@@ -87,7 +87,7 @@ async def handle_bill(update, context):
                 historical_rate = float(rate_info[0])
                 historical_fee = float(rate_info[1].split(",")[0])
                 effective_rate = 1 + historical_fee
-                bill += f"{timestamp}  {format_amount(amount)} * (1+{format_amount(historical_fee)}) / {format_exchange_rate(historical_rate)} = {format_amount(adjusted)}u    {operator}\n"
+                bill += f"{timestamp}  {format_amount(amount)} * {format_amount(effective_rate)} / {format_exchange_rate(historical_rate)} = {format_amount(adjusted)}u    {operator}\n"
 
     if deposit_count > 0 or withdraw_count > 0:
         if deposit_count > 0 or withdraw_count > 0:
@@ -217,7 +217,7 @@ async def handle_message(update, context):
         return
 
     # Arithmetic calculation with reply to original message
-    arithmetic_pattern = r'^\d[\d\s\.\-+*/()÷]*$'
+    arithmetic_pattern = r'^\d.*[\d\s\.\-+*/()÷].*$'
     if re.match(arithmetic_pattern, message_text):
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到算术表达式: {message_text}")
         try:
