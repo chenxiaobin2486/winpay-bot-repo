@@ -243,7 +243,7 @@ async def handle_message(update, context):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '开始' 指令")
             transactions[chat_id].clear()
             is_accounting_enabled[chat_id] = True
-            await context.bot.send_message(chat_id=chat_id, text="欢迎使用 聚元支付小助手，入金叫卡找聚元，光速到账似火箭")
+            await context.bot.send_message(chat_id=chat_id, text="欢迎使用 🌏聚元支付小助手，入金叫卡找聚元，光速到账似火箭")
 
     elif message_text == "停止记账":
         if is_operator:
