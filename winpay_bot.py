@@ -37,7 +37,7 @@ def format_exchange_rate(rate):
     formatted = f"{float(rate):.3f}"
     return formatted.rstrip('0').rstrip('.')
 
-async def handle_bill(update, context, reply_to_message_id=None):
+async def handle_bill(update, context):
     chat_id = str(update.message.chat_id)
     if chat_id not in transactions:
         transactions[chat_id] = []
@@ -115,8 +115,7 @@ async def handle_bill(update, context, reply_to_message_id=None):
     await context.bot.send_message(
         chat_id=chat_id,
         text=bill if transactions[chat_id] else "当前暂无交易记录，老板速度来单",
-        reply_markup=reply_markup,
-        reply_to_message_id=reply_to_message_id
+        reply_markup=reply_markup
     )
 
 async def welcome_new_member(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
@@ -218,8 +217,8 @@ async def handle_message(update, context):
         return
 
     # Arithmetic calculation with reply to original message
-    arithmetic_pattern = r'^-?\d+(\.\d+)?([-+*/]-?\d+(\.\d+)?)+$'
-    if re.match(arithmetic_pattern, message_text) and re.match(r'^[0-9\.\-+*/]+$', message_text):
+    arithmetic_pattern = r'^[\d\s\.\-+*/()÷]+$'
+    if re.match(arithmetic_pattern, message_text):
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到算术表达式: {message_text}")
         try:
             expression = message_text.replace('÷', '/')
@@ -255,7 +254,7 @@ async def handle_message(update, context):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 算术计算错误: {e}")
             await context.bot.send_message(
                 chat_id=chat_id,
-                text="请输入正确的算术表达式，例如：100+27 或 92000*0.92/1456",
+                text="请输入正确的算术表达式，例如：100+27 或 (2000*0.92)/1456",
                 reply_to_message_id=update.message.message_id
             )
             return
@@ -341,21 +340,19 @@ async def handle_message(update, context):
                 if update.message.reply_to_message:
                     reply_user = update.message.reply_to_message.from_user
                     operator_name = reply_user.first_name.strip() if reply_user.first_name else reply_user.username
-                    reply_id = update.message.reply_to_message.message_id
                 else:
                     operator_name = first_name or username
-                    reply_id = None
                 if amount_str.lower().endswith('u'):
                     amount = float(amount_str.rstrip('uU'))
                     transaction = f"入款 {format_amount(amount)}u {timestamp} {date} [operator={operator_name}]"
                     transactions[chat_id].append(transaction)
-                    await handle_bill(update, context, reply_to_message_id=reply_id)
+                    await handle_bill(update, context)
                 else:
                     amount = float(amount_str)
                     adjusted_amount = amount * (1 - deposit_fee_rate) / exchange_rate_deposit
                     transaction = f"入款 {format_amount(amount)} {timestamp} {date} -> {format_amount(adjusted_amount)}u [rate={exchange_rate_deposit}, fee={deposit_fee_rate}, operator={operator_name}]"
                     transactions[chat_id].append(transaction)
-                    await handle_bill(update, context, reply_to_message_id=reply_id)
+                    await handle_bill(update, context)
             except ValueError:
                 await context.bot.send_message(chat_id=chat_id, text="请输入正确金额，例如：入款1000 或 +1000 或 +100u")
 
@@ -373,21 +370,19 @@ async def handle_message(update, context):
                 if update.message.reply_to_message:
                     reply_user = update.message.reply_to_message.from_user
                     operator_name = reply_user.first_name.strip() if reply_user.first_name else reply_user.username
-                    reply_id = update.message.reply_to_message.message_id
                 else:
                     operator_name = first_name or username
-                    reply_id = None
                 if amount_str.lower().endswith('u'):
                     amount = float(amount_str.rstrip('uU'))
                     transaction = f"下发 {format_amount(amount)}u {timestamp} {date} [operator={operator_name}]"
                     transactions[chat_id].append(transaction)
-                    await handle_bill(update, context, reply_to_message_id=reply_id)
+                    await handle_bill(update, context)
                 else:
                     amount = float(amount_str)
                     adjusted_amount = amount * (1 + withdraw_fee_rate) / exchange_rate_withdraw
                     transaction = f"下发 {format_amount(amount)} {timestamp} {date} -> {format_amount(adjusted_amount)}u [rate={exchange_rate_withdraw}, fee={withdraw_fee_rate}, operator={operator_name}]"
                     transactions[chat_id].append(transaction)
-                    await handle_bill(update, context, reply_to_message_id=reply_id)
+                    await handle_bill(update, context)
             except ValueError:
                 await context.bot.send_message(chat_id=chat_id, text="请输入正确金额，例如：下发500 或 下发50u")
 
