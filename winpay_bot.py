@@ -146,7 +146,7 @@ async def welcome_new_member(update: telegram.Update, context: telegram.ext.Cont
 async def handle_message(update, context):
     global operating_groups, transactions, user_history, address_verify_count, is_accounting_enabled, exchange_rates, team_groups, scheduled_tasks, last_file_id, last_file_message, templates
     message_text = update.message.text.strip() if update.message.text else ""
-    chat_id = str(update.message.shat_id)
+    chat_id = str(update.message.chat_id)
     user_id = str(update.message.from_user.id)
     username = update.message.from_user.username
     first_name = update.message.from_user.first_name.strip() if update.message.from_user.first_name else None
