@@ -217,7 +217,7 @@ async def handle_message(update, context):
         return
 
     # Arithmetic calculation with reply to original message
-    arithmetic_pattern = r'^[\d\s\.\-+*/()÷]+$'
+    arithmetic_pattern = r'^\d[\d\s\.\-+*/()÷]*$'
     if re.match(arithmetic_pattern, message_text):
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到算术表达式: {message_text}")
         try:
@@ -235,28 +235,9 @@ async def handle_message(update, context):
                     text=response,
                     reply_to_message_id=update.message.message_id
                 )
-            else:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text="计算结果无效，请输入正确的算术表达式",
-                    reply_to_message_id=update.message.message_id
-                )
             return
-        except ZeroDivisionError:
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 算术错误: 除数为零")
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text="错误：除数不能为0",
-                reply_to_message_id=update.message.message_id
-            )
-            return
-        except Exception as e:
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 算术计算错误: {e}")
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text="请输入正确的算术表达式，例如：100+27 或 (2000*0.92)/1456",
-                reply_to_message_id=update.message.message_id
-            )
+        except Exception:
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 忽略无效算术表达式: {message_text}")
             return
 
     if not any(message_text.startswith(cmd) or message_text == cmd for cmd in [
