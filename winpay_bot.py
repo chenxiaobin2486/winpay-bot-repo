@@ -12,7 +12,7 @@ import threading
 app = Flask(__name__)
 CORS(app)
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "7908773608:AAFFqLmGkJ9zbsuymQTFzJxy5IyeN1E9M-U")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8401029616:AAH75qtZCE05RX-qieHIQO3TwylmIAwC8nM")
 initial_admin_username = "juyuanzhifu_01"
 operating_groups = {}
 transactions = {}
