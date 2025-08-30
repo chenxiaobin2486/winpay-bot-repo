@@ -111,7 +111,7 @@ async def handle_bill(update, context):
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     keyboard = [[InlineKeyboardButton("查看完整账单", url=f"https://bill-web-app.onrender.com/Telegram/BillReport?group_id={chat_id}")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await context.bot.send_message(chat_id=chat_id, text=bill if transactions[chat_id] else "无交易记录", reply_markup=reply_markup)
+    await context.bot.send_message(chat_id=chat_id, text=bill if transactions[chat_id] else "当前暂无交易记录，老板速度来单", reply_markup=reply_markup)
 
 async def welcome_new_member(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.message.chat_id)
