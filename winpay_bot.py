@@ -1,12 +1,12 @@
+import re
+from datetime import datetime, timezone, timedelta
+import pytz
+from telegram.ext import Application, ApplicationBuilder, MessageHandler, filters
+import telegram.ext
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import asyncio
-from telegram.ext import Application, ApplicationBuilder, MessageHandler, filters
-import telegram.ext
-import re
 import os
-from datetime import datetime, timezone, timedelta
-import pytz
 import threading
 
 app = Flask(__name__)
@@ -221,7 +221,7 @@ async def handle_message(update, context):
     if not any(message_text.startswith(cmd) or message_text == cmd for cmd in [
         "开始", "停止记账", "恢复记账", "说明", "入款", "+", "下发", "设置操作员", "删除操作员",
         "设置入款汇率", "设置入款费率", "设置下发汇率", "设置下发费率", "账单", "+0", "删除",
-        "删除账单", "日切", "操作员列表", "编队", "删除", "编辑", "任务", "任务列表", "群发说明"
+        "删除账单", "日切", "操作员列表", "编队", "删除", "编辑", "任务", "任务列表", "群发说明", "拉停"
     ]):
         # Arithmetic calculation with reply to original message
         arithmetic_pattern = r'^\d+[\d\s\.\-+*/×()÷]*$'
@@ -281,6 +281,19 @@ async def handle_message(update, context):
             await context.bot.send_message(chat_id=chat_id, text=f"@{username}非操作员，请联系管理员设置权限")
         return
 
+    # 新增“拉停”指令
+    if message_text == "拉停":
+        if is_operator and is_accounting_enabled.get(chat_id, True):
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '拉停' 指令")
+            warning_message = "‼️❌**车况异常，停止入金**❌‼️\n" * 3
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=warning_message.rstrip(),
+                parse_mode="Markdown",
+                reply_to_message_id=update.message.message_id if update.message.reply_to_message else None
+            )
+            return
+
     if message_text == "编队列表" and update.message.chat.type == "private":
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '编队列表' 指令")
         if username and (username in operating_groups.get("private", {}) or username == initial_admin_username):
@@ -331,6 +344,7 @@ async def handle_message(update, context):
 撤销交易记录 - 回复入款或下发消息+删除
 清空账单：删除账单
 查看操作员：操作员列表
+停止入金：拉停
             """
             await context.bot.send_message(chat_id=chat_id, text=help_text)
 
