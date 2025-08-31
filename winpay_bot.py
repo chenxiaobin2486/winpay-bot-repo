@@ -247,7 +247,7 @@ async def handle_message(update, context):
                 print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 忽略无效算术表达式: {message_text}, 错误: {str(e)}")
                 return
         # TRX address validation
-        elif re.match(r'^[T][a-km-zA-HJ-NZ1-9]{33}$', message_text):
+        elif re.match(r'^[T][123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{33}$', message_text):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 TRX 地址验证: {message_text}")
             try:
                 current_user = f"@{username}" if username else "未知用户"
@@ -264,7 +264,13 @@ async def handle_message(update, context):
             return
         else:
             if message_text.startswith('T'):
-                print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 地址格式错误: {message_text}, 长度={len(message_text)}, 非法字符={[c for c in message_text if c not in 'Ta-km-zA-HJ-NZ1-9']}")
+                invalid_chars = [c for c in message_text if c not in 'T123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz']
+                if invalid_chars or len(message_text) != 34:
+                    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 地址格式错误: {message_text}, 长度={len(message_text)}, 非法字符={invalid_chars}")
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"地址格式错误：{message_text}\n长度：{len(message_text)}（应为34）\n非法字符：{invalid_chars or '无'}\nTRON地址应以'T'开头，仅含 1-9, A-Z, a-z（排除0, I, O, l）"
+                    )
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 未匹配任何逻辑，输入: {message_text}")
             return
 
