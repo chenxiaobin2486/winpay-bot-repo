@@ -276,23 +276,24 @@ async def handle_message(update, context):
 
     is_operator = username and (username in operating_groups.get(chat_id, {}) or 
                               (update.message.chat.type == "private" and username in operating_groups.get("private", {})))
-    if not is_operator and message_text not in ["账单", "+0", "说明"]:
-        if username:
-            await context.bot.send_message(chat_id=chat_id, text=f"@{username}非操作员，请联系管理员设置权限")
-        return
 
     # 新增“拉停”指令
     if message_text == "拉停":
-        if is_operator and is_accounting_enabled.get(chat_id, True):
+        if is_operator:
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '拉停' 指令")
             warning_message = "‼️❌**车况异常，停止入金**❌‼️\n" * 3
             await context.bot.send_message(
                 chat_id=chat_id,
                 text=warning_message.rstrip(),
                 parse_mode="Markdown",
-                reply_to_message_id=update.message.message_id if update.message.reply_to_message else None
+                reply_to_message_id=update.message.message_id
             )
-            return
+        return
+
+    if not is_operator and message_text not in ["账单", "+0", "说明"]:
+        if username:
+            await context.bot.send_message(chat_id=chat_id, text=f"@{username}非操作员，请联系管理员设置权限")
+        return
 
     if message_text == "编队列表" and update.message.chat.type == "private":
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '编队列表' 指令")
