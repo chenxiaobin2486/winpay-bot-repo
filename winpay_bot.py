@@ -149,7 +149,7 @@ async def welcome_new_member(update: telegram.Update, context: telegram.ext.Cont
 
 async def handle_message(update, context):
     global operating_groups, transactions, user_history, address_verify_count, is_accounting_enabled, exchange_rates, team_groups, scheduled_tasks, last_file_id, last_file_message, templates
-    message_text = update.message.text.strip() if update.message.text else ""
+    message_text = ''.join(c for c in update.message.text if c.isprintable()).strip() if update.message.text else ""
     chat_id = str(update.message.chat_id)
     user_id = str(update.message.from_user.id)
     username = update.message.from_user.username
@@ -249,16 +249,22 @@ async def handle_message(update, context):
         # TRX address validation
         elif re.match(r'^[T][a-km-zA-HJ-NZ1-9]{33}$', message_text):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 TRX 地址验证: {message_text}")
-            current_user = f"@{username}" if username else "未知用户"
-            address_verify_count[chat_id]["count"] += 1
-            last_user = address_verify_count[chat_id]["last_user"] or "无"
-            address_verify_count[chat_id]["last_user"] = current_user
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=f"{message_text}\n验证次数：{address_verify_count[chat_id]['count']}\n本次发送人：{current_user}\n上次发送人：{last_user}"
-            )
+            try:
+                current_user = f"@{username}" if username else "未知用户"
+                address_verify_count[chat_id]["count"] += 1
+                last_user = address_verify_count[chat_id]["last_user"] or "无"
+                address_verify_count[chat_id]["last_user"] = current_user
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"{message_text}\n验证次数：{address_verify_count[chat_id]['count']}\n本次发送人：{current_user}\n上次发送人：{last_user}"
+                )
+            except Exception as e:
+                print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 地址验证错误: {str(e)}")
+                await context.bot.send_message(chat_id=chat_id, text="地址验证失败，请稍后再试或联系管理员")
             return
         else:
+            if message_text.startswith('T'):
+                print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 地址格式错误: {message_text}, 长度={len(message_text)}, 非法字符={[c for c in message_text if c not in 'Ta-km-zA-HJ-NZ1-9']}")
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 未匹配任何逻辑，输入: {message_text}")
             return
 
