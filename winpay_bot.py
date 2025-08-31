@@ -131,6 +131,7 @@ async def welcome_new_member(update: telegram.Update, context: telegram.ext.Cont
             timestamp = datetime.now(pytz.timezone("Asia/Bangkok")).strftime("%Y年%m月%d日 %H:%M")
 
             user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 新用户记录: {user_id}, username={username}, first_name={first_name}")
             await context.bot.send_message(chat_id=chat_id, text=f"热烈欢迎 {nickname} 来到本群，入金叫卡找聚元，光速到账似火箭")
 
             if user_id in user_history[chat_id]:
@@ -175,7 +176,7 @@ async def handle_message(update, context):
 
     if user_id not in user_history[chat_id]:
         user_history[chat_id][user_id] = {"username": username, "first_name": first_name}
-        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 初始化用户 {user_id} 记录: username={username}, first_name={first_name}")
+        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 新用户记录: {user_id}, username={username}, first_name={first_name}")
     else:
         old_data = user_history[chat_id][user_id].copy()
         old_username = old_data["username"]
@@ -216,36 +217,50 @@ async def handle_message(update, context):
             await context.bot.send_message(chat_id=chat_id, text="无法识别文件，请确保发送的是动图、视频或图片文件")
         return
 
-    # Arithmetic calculation with reply to original message
-    arithmetic_pattern = r'^\d.*[\d\s\.\-+*/()÷].*$'
-    if re.match(arithmetic_pattern, message_text):
-        print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到算术表达式: {message_text}")
-        try:
-            expression = message_text.replace('÷', '/')
-            result = eval(expression, {"__builtins__": {}}, {})
-            if isinstance(result, (int, float)):
-                if isinstance(result, float) and result.is_integer():
-                    result = int(result)
-                else:
-                    result = round(result, 2)
-                response = f"{message_text}={result}"
-                print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 算术结果: {response}")
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=response,
-                    reply_to_message_id=update.message.message_id
-                )
-            return
-        except Exception:
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 忽略无效算术表达式: {message_text}")
-            return
-
+    # Handle commands first
     if not any(message_text.startswith(cmd) or message_text == cmd for cmd in [
         "开始", "停止记账", "恢复记账", "说明", "入款", "+", "下发", "设置操作员", "删除操作员",
         "设置入款汇率", "设置入款费率", "设置下发汇率", "设置下发费率", "账单", "+0", "删除",
         "删除账单", "日切", "操作员列表", "编队", "删除", "编辑", "任务", "任务列表", "群发说明"
     ]):
-        return
+        # Arithmetic calculation with reply to original message
+        arithmetic_pattern = r'^\d+[\d\s\.\-+*/×()÷]*$'
+        if re.match(arithmetic_pattern, message_text):
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到算术表达式: {message_text}")
+            try:
+                expression = message_text.replace('÷', '/').replace('×', '*').replace('x', '*').replace('−', '-')
+                result = eval(expression, {"__builtins__": {}}, {})
+                if isinstance(result, (int, float)):
+                    if isinstance(result, float) and result.is_integer():
+                        result = int(result)
+                    else:
+                        result = round(result, 2)
+                    response = f"{message_text}={result}"
+                    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 算术结果: {response}")
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=response,
+                        reply_to_message_id=update.message.message_id
+                    )
+                return
+            except Exception as e:
+                print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 忽略无效算术表达式: {message_text}, 错误: {str(e)}")
+                return
+        # TRX address validation
+        elif re.match(r'^[T][a-km-zA-HJ-NZ1-9]{33}$', message_text):
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 TRX 地址验证: {message_text}")
+            current_user = f"@{username}" if username else "未知用户"
+            address_verify_count[chat_id]["count"] += 1
+            last_user = address_verify_count[chat_id]["last_user"] or "无"
+            address_verify_count[chat_id]["last_user"] = current_user
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"{message_text}\n验证次数：{address_verify_count[chat_id]['count']}\n本次发送人：{current_user}\n上次发送人：{last_user}"
+            )
+            return
+        else:
+            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 未匹配任何逻辑，输入: {message_text}")
+            return
 
     is_operator = username and (username in operating_groups.get(chat_id, {}) or 
                               (update.message.chat.type == "private" and username in operating_groups.get("private", {})))
@@ -272,7 +287,7 @@ async def handle_message(update, context):
             print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 '开始' 指令")
             transactions[chat_id].clear()
             is_accounting_enabled[chat_id] = True
-            await context.bot.send_message(chat_id=chat_id, text="欢迎使用 🌏聚元支付小助手，入金叫卡找聚元，光速到账似火箭")
+            await context.bot.send_message(chat_id=chat_id, text="欢迎使用聚元支付小助手，入金叫卡找聚元，光速到账似火箭")
 
     elif message_text == "停止记账":
         if is_operator:
@@ -497,21 +512,6 @@ async def handle_message(update, context):
             private_op_list = ", ".join([f"@{op}" for op in operating_groups.get("private", {})]) if "private" in operating_groups else "无"
             await context.bot.send_message(chat_id=chat_id, text=f"当前群组操作员列表: {op_list if op_list else '无'}\n私聊操作员列表: {private_op_list}")
 
-    elif re.match(r'^[T][a-km-zA-HJ-NZ1-9]{33}$', message_text):
-        if is_accounting_enabled.get(chat_id, True):
-            print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 匹配到 TRX 地址验证")
-            chat_id = str(update.message.chat_id)
-            current_user = f"@{username}" if username else "未知用户"
-            address_verify_count[chat_id]["count"] += 1
-            last_user = address_verify_count[chat_id]["last_user"] or "无"
-            address_verify_count[chat_id]["last_user"] = current_user
-            await context.bot.send_message(chat_id=chat_id, text=
-                f"{message_text}\n"
-                f"验证次数：{address_verify_count[chat_id]['count']}\n"
-                f"本次发送人：{current_user}\n"
-                f"上次发送人：{last_user}"
-            )
-
     if update.message.chat.type == "private":
         if message_text == "群发说明":
             help_text = """
@@ -654,6 +654,14 @@ def get_transactions_api(chat_id):
         print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] API 错误: {e}")
         return jsonify({'error': str(e)}), 500
 
+async def error_handler(update, context):
+    print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] 错误: {context.error}")
+    if update and update.message:
+        await context.bot.send_message(
+            chat_id=update.message.chat_id,
+            text="抱歉，机器人遇到错误，请稍后再试或联系管理员。"
+        )
+
 def run_flask():
     flask_port = int(os.getenv("FLASK_PORT", 5001))
     print(f"[{datetime.now(pytz.timezone('Asia/Bangkok')).strftime('%H:%M:%S')}] Starting Flask with gunicorn on port {flask_port}")
@@ -687,6 +695,7 @@ def run_bot():
     app_bot = ApplicationBuilder().token(BOT_TOKEN).build()
     app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app_bot.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
+    app_bot.add_error_handler(error_handler)
     app_bot.run_webhook(
         listen="0.0.0.0",
         port=int(os.getenv("PORT", 10000)),
